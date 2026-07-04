@@ -9,8 +9,8 @@ import {
   sortCardIds,
   translatePlacementToDeal,
 } from "./cards.js";
-import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=exact-cache-6";
-import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=exact-cache-6";
+import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=exact-cache-7";
+import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=exact-cache-7";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
 
 const selected = new Set();
@@ -353,7 +353,9 @@ function exactProofForCurrentDeal() {
     progress?.threePlusCompletedDiscards ||
     progress?.threePlusExhausted ||
     progress?.threePlusLastChunkChecked !== undefined;
-  if (!hasHighProgress && !hasThreePlusProgress) {
+  const hasLowProgress =
+    progress?.lowCompletedDiscards || progress?.lowExhausted || progress?.lowLastChunkChecked !== undefined;
+  if (!hasHighProgress && !hasThreePlusProgress && !hasLowProgress) {
     return null;
   }
 
@@ -368,6 +370,22 @@ function exactProofForCurrentDeal() {
   const threePlusCurrentDiscardRows = Number(progress.threePlusCurrentDiscardRows ?? 0);
   const threePlusProvesOptimum =
     progress.highExhausted && progress.threePlusExhausted && bestKnownTotal > theoreticalMaxTotalForHandCount(5);
+  const lowCandidateDiscards = Number(progress.lowCandidateDiscards ?? 0);
+  const lowCompletedDiscards = Number(progress.lowCompletedDiscards ?? 0);
+  const lowCurrentDiscardRows = Number(progress.lowCurrentDiscardRows ?? 0);
+  const lowProvesOptimum = progress.highExhausted && progress.threePlusExhausted && progress.lowExhausted;
+
+  if (lowProvesOptimum) {
+    return {
+      status: "proven",
+      scope: "Local full exact search",
+      completedDiscards: lowCompletedDiscards,
+      totalCandidateDiscards: lowCandidateDiscards,
+      currentDiscardRows: 0,
+      bestKnownTotal,
+      canonicalDealKey: canonicalKey,
+    };
+  }
 
   if (threePlusProvesOptimum) {
     return {
@@ -376,6 +394,18 @@ function exactProofForCurrentDeal() {
       completedDiscards: threePlusCompletedDiscards,
       totalCandidateDiscards: threePlusCandidateDiscards,
       currentDiscardRows: 0,
+      bestKnownTotal,
+      canonicalDealKey: canonicalKey,
+    };
+  }
+
+  if (hasLowProgress) {
+    return {
+      status: progress.lowExhausted ? "low-complete" : "running",
+      scope: "Local exact 0-2 row lower bucket",
+      completedDiscards: lowCompletedDiscards,
+      totalCandidateDiscards: lowCandidateDiscards,
+      currentDiscardRows: lowCurrentDiscardRows,
       bestKnownTotal,
       canonicalDealKey: canonicalKey,
     };
@@ -576,6 +606,7 @@ function mergeSolverResults(primary, exactHigh) {
     exactColumnPartitions: exactHigh.columnPartitions,
     nativeHighProgress: exactHigh.nativeHighProgress ?? primary.nativeHighProgress,
     nativeThreePlusProgress: exactHigh.nativeThreePlusProgress ?? primary.nativeThreePlusProgress,
+    nativeLowProgress: exactHigh.nativeLowProgress ?? primary.nativeLowProgress,
     searchOrder: `${primary.searchOrder} Exact pass: ${exactHigh.searchOrder}`,
   };
 }
@@ -633,7 +664,12 @@ function nativePlacementFromPayload(payload) {
     grid: payload.grid,
     discard: payload.discardCards,
     score,
-    source: payload.mode === "three-plus-low" ? "native exact 3+ low-bucket" : "native exact high-bucket",
+    source:
+      payload.mode === "low-two"
+        ? "native exact 0-2 row low-bucket"
+        : payload.mode === "three-plus-low"
+          ? "native exact 3+ low-bucket"
+          : "native exact high-bucket",
     key: `native-exact-${payload.grid.join(" ")}|${payload.discardCards.join(" ")}`,
   };
 }
@@ -955,6 +991,162 @@ async function solveFantasylandExactThreePlusNative(cardIds, incumbentSolution, 
   });
 }
 
+function nativeExactLowResult({
+  best,
+  solutions,
+  elapsedMs,
+  attempts,
+  candidateCount,
+  checkedDiscards,
+  exhaustedLowRows,
+  timedOut,
+  searchOrder,
+  nativeLowProgress,
+}) {
+  return {
+    best,
+    solutions: uniqueSortedSolutions(solutions).slice(0, 24),
+    bestByHandCount: bucketSummariesForBest(best, exhaustedLowRows, exhaustedLowRows),
+    attempts,
+    elapsedMs,
+    candidateCount,
+    exact: Boolean(best) && exhaustedLowRows,
+    exhaustedHighBuckets: true,
+    exhaustedThreePlusRows: true,
+    exhaustedLowRows,
+    highBucketsCovered: true,
+    threePlusRowsCovered: true,
+    lowTwoRowCeiling: theoreticalMaxTotalForHandCount(5),
+    timedOut,
+    checkedDiscards: candidateCount,
+    checkedThreeRowDiscards: candidateCount,
+    checkedLowRowDiscards: checkedDiscards,
+    rowPartitions: 0,
+    threeRowPartitions: 0,
+    lowRowPartitions: Number(nativeLowProgress?.rowPartitions ?? 0),
+    columnPartitions: Number(nativeLowProgress?.columnPartitions ?? 0),
+    nativeLowProgress,
+    searchOrder,
+  };
+}
+
+async function solveFantasylandExactLowNative(cardIds, incumbentSolution, timeLimitMs) {
+  if (timeLimitMs < 200) return null;
+
+  const previousProgress = exactProgressForCurrentDeal();
+  const previousCandidateCount = Number(previousProgress?.lowCandidateDiscards ?? 0);
+  const previousCompleted = Number(previousProgress?.lowCompletedDiscards ?? 0);
+  const previousOpenRows = Number(previousProgress?.lowCurrentDiscardRows ?? 0);
+
+  if (previousProgress?.lowExhausted) {
+    return nativeExactLowResult({
+      best: incumbentSolution,
+      solutions: [incumbentSolution],
+      elapsedMs: 0,
+      attempts: 0,
+      candidateCount: previousCandidateCount,
+      checkedDiscards: previousCompleted,
+      exhaustedLowRows: true,
+      timedOut: false,
+      nativeLowProgress: {
+        completedDiscards: previousCompleted,
+        currentDiscardRows: 0,
+        candidateDiscards: previousCandidateCount,
+        exhausted: true,
+        advanced: false,
+      },
+      searchOrder: `Native exact 0-2 row low-bucket proof loaded from local progress (${previousCompleted}/${previousCandidateCount} discard candidates checked).`,
+    });
+  }
+
+  const skipDiscards = Math.max(0, previousCompleted);
+  const seconds = Math.max(0.2, Math.min(timeLimitMs / 1000, 30));
+  const startedAt = performance.now();
+
+  let payload;
+  try {
+    const response = await fetch("/api/exact-high-chunk", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mode: "low-two",
+        cards: canonicalOrderedCards(cardIds),
+        seconds,
+        incumbent: incumbentSolution?.score.total ?? 0,
+        skipDiscards,
+        skipRows: previousOpenRows,
+        discardLimit: 0,
+      }),
+    });
+    if (!response.ok) return null;
+    payload = await response.json();
+    if (payload?.error) return null;
+  } catch {
+    return null;
+  }
+
+  const elapsedMs = performance.now() - startedAt;
+  const candidateCount = Number(payload.candidateDiscards ?? previousCandidateCount);
+  const checkedThisChunk = Number(payload.discardsChecked ?? 0);
+  const fullyCheckedThisChunk = Number(
+    payload.fullyCheckedDiscards ?? (payload.timedOut ? Math.max(0, checkedThisChunk - 1) : checkedThisChunk),
+  );
+  const completedDiscards = candidateCount
+    ? Math.min(candidateCount, skipDiscards + fullyCheckedThisChunk)
+    : skipDiscards + fullyCheckedThisChunk;
+  const openRowsThisChunk = Number(payload.openDiscardRowsCompleted ?? 0);
+  const currentDiscardRows =
+    completedDiscards >= candidateCount || (!payload.timedOut && !payload.rowLimitHit)
+      ? 0
+      : fullyCheckedThisChunk > 0
+        ? openRowsThisChunk
+        : previousOpenRows + openRowsThisChunk;
+  const exhaustedLowRows = Boolean(
+    candidateCount && !payload.timedOut && !payload.rowLimitHit && completedDiscards >= candidateCount,
+  );
+  const nativePlacement = nativePlacementFromPayload(payload);
+  if (nativePlacement) saveBestKnownSolution(nativePlacement, nativePlacement.source);
+
+  const progress = saveExactProgressForCurrentDeal({
+    lowCandidateDiscards: candidateCount,
+    lowCompletedDiscards: completedDiscards,
+    lowCurrentDiscardRows: currentDiscardRows,
+    lowExhausted: exhaustedLowRows,
+    lowLastChunkStart: skipDiscards,
+    lowLastChunkRowStart: previousOpenRows,
+    lowLastChunkChecked: checkedThisChunk,
+    lowLastChunkFullyChecked: fullyCheckedThisChunk,
+    lowLastChunkRowsCompleted: openRowsThisChunk,
+    lowLastChunkTimedOut: Boolean(payload.timedOut),
+    lowLastBestTotal: nativePlacement?.score.total ?? incumbentSolution?.score.total ?? 0,
+  });
+
+  const solutions = uniqueSortedSolutions([incumbentSolution, nativePlacement]);
+  const best = solutions[0] ?? incumbentSolution ?? null;
+
+  return nativeExactLowResult({
+    best,
+    solutions,
+    elapsedMs,
+    attempts: Number(payload.rowPartitions ?? 0) + Number(payload.columnPartitions ?? 0),
+    candidateCount,
+    checkedDiscards: completedDiscards,
+    exhaustedLowRows,
+    timedOut: Boolean(payload.timedOut),
+    nativeLowProgress: {
+      ...progress,
+      completedDiscards,
+      currentDiscardRows,
+      candidateDiscards: candidateCount,
+      exhausted: exhaustedLowRows,
+      advanced: completedDiscards > skipDiscards || currentDiscardRows > previousOpenRows,
+      rowPartitions: Number(payload.rowPartitions ?? 0),
+      columnPartitions: Number(payload.columnPartitions ?? 0),
+    },
+    searchOrder: `Native exact 0-2 row low-bucket chunk checked ${checkedThisChunk.toLocaleString()} discard candidate${checkedThisChunk === 1 ? "" : "s"} from offset ${skipDiscards.toLocaleString()} and row offset ${previousOpenRows.toLocaleString()}; local progress is ${completedDiscards.toLocaleString()}/${candidateCount.toLocaleString()} discards plus ${currentDiscardRows.toLocaleString()} rows on the current discard.`,
+  });
+}
+
 function renderMiniCardContent(cardId) {
   const card = CARD_BY_ID[cardId];
   const suit = SUIT_META[card.suit];
@@ -1093,6 +1285,11 @@ function renderProofPanel() {
 
   if (proof.status === "three-plus-complete") {
     proofSummary.textContent = `${proof.scope} complete: checked ${proof.completedDiscards}/${proof.totalCandidateDiscards} discard candidates. 0-2-row buckets still need proof because best known is ${money(proof.bestKnownTotal)}.`;
+    return;
+  }
+
+  if (proof.status === "low-complete") {
+    proofSummary.textContent = `${proof.scope} complete: checked ${proof.completedDiscards}/${proof.totalCandidateDiscards} discard candidates. Waiting for high and 3+ lower-bucket proof before certification.`;
     return;
   }
 
@@ -1279,19 +1476,26 @@ async function optimize() {
         : 0;
       if (!latestResult.exact && remainingExactBudget > 50) {
         setOptimizerTimerPhase("Final buckets");
-        const exactLowRowsResult = solveFantasylandExactHighBuckets(selectedCards(), {
-          timeLimitMs: remainingExactBudget,
-          maxSolutions: 24,
-          minGridHandCount: 0,
-          maxGridHandCount: 5,
-          maxColumnHandCount: 2,
-          includeFourPositiveRows: false,
-          includeTwoOrFewerPositiveRows: true,
-          highBucketsAlreadyExhausted: true,
-          threePlusRowsAlreadyExhausted: true,
-          incumbentSolution: latestResult.best,
-          sourceLabel: "exact 0-2 row low-bucket",
-        });
+        let exactLowRowsResult = await solveFantasylandExactLowNative(
+          selectedCards(),
+          latestResult.best,
+          remainingExactBudget,
+        );
+        if (!exactLowRowsResult) {
+          exactLowRowsResult = solveFantasylandExactHighBuckets(selectedCards(), {
+            timeLimitMs: remainingExactBudget,
+            maxSolutions: 24,
+            minGridHandCount: 0,
+            maxGridHandCount: 5,
+            maxColumnHandCount: 2,
+            includeFourPositiveRows: false,
+            includeTwoOrFewerPositiveRows: true,
+            highBucketsAlreadyExhausted: true,
+            threePlusRowsAlreadyExhausted: true,
+            incumbentSolution: latestResult.best,
+            sourceLabel: "exact 0-2 row low-bucket",
+          });
+        }
         latestResult = mergeSolverResults(latestResult, exactLowRowsResult);
       }
     }
@@ -1307,10 +1511,14 @@ async function optimize() {
         ? "High buckets exhausted, lower buckets still possible"
         : improvedBestKnown
           ? "New best known saved"
+          : latestResult.nativeLowProgress?.advanced
+            ? "Final lower-bucket progress saved"
           : latestResult.nativeThreePlusProgress?.advanced
             ? "3+ lower-bucket progress saved"
           : latestResult.nativeHighProgress?.advanced
             ? "Exact progress saved"
+          : latestResult.nativeLowProgress
+            ? "Best known kept; final lower-bucket chunk will retry the current candidate"
           : latestResult.nativeThreePlusProgress
             ? "Best known kept; lower-bucket chunk will retry the current candidate"
           : latestResult.nativeHighProgress

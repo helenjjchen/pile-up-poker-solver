@@ -105,16 +105,16 @@ V0 implementation target:
 - Search 10-hand starts first, then 9-hand starts, then lower hand-count starts, and report best-found score by hand-count bucket.
 - Persist best-known placements by canonical/equivalent 20-card deal key. Seed known records from `data/best-known-fantasyland.json`; update browser-local records when a search finds a better score, and reuse the strongest saved lower bound for equivalent deals by translating the placement onto the selected cards.
 - When the app is served by `server.mjs`, run compiled C++ exact chunks through `/api/exact-high-chunk` before falling back to the slower JS exact pass. Card order is canonicalized before the native call, so safe resume progress can also be stored by canonical/equivalent deal key.
-- Persist native exact high-bucket and 3+/4-row low-bucket progress in browser local storage. Timed-out chunks advance only through fully completed discard candidates plus fully completed row partitions inside the current discard candidate; the currently evaluating row partition is retried on the next run so the proof cache remains conservative.
+- Persist native exact high-bucket, 3+/4-row low-bucket, and 0/1/2-row low-bucket progress in browser local storage. Timed-out chunks advance only through fully completed discard candidates plus fully completed row partitions inside the current discard candidate; the currently evaluating row partition is retried on the next run so the proof cache remains conservative.
 - Run an exact browser-side 8/9/10-hand certification pass after the fast heuristic incumbent. If that exact pass exhausts and the incumbent beats the theoretical 7-or-fewer-hand ceiling of `$14400`, the UI may label the result "Best Possible".
 - If the high-bucket pass exhausts but the score is not above `$14400`, continue into the native 3+/4-row low-bucket pass. Because any board can be transposed, once every orientation with at least 3 scoring rows is exhausted, any best score above the two-or-fewer-row ceiling of `$8100` can also be certified.
-- If needed, run the final exact 0/1/2-row low-region certifier with at most 2 scoring columns. Once high buckets, 3+/4-row buckets, and this final region are all exhausted, the result can be certified regardless of score.
+- If needed, run the native final exact 0/1/2-row low-region certifier with at most 2 scoring columns. Once high buckets, 3+/4-row buckets, and this final region are all exhausted, the result can be certified regardless of score.
 
 Solver path:
 
 - Start with an anytime local-search optimizer for a usable browser V0.
 - Keep scorer and placement representation pure and deterministic.
-- Current browser path combines the heuristic with native C++ exact chunks when the Node server is available, otherwise JS exact fallbacks. The native high-bucket and 3+/4-row low-bucket chunks can resume within a long-running discard candidate by skipping row partitions that were already completed in prior chunks. If high and 3+/4-row buckets exhaust but the score is still not above `$8100`, the app conditionally searches the final 0/1/2-row low bucket in JS. The proof space is represented end to end, but arbitrary-hand V0 usability still needs the final low-region proof to be faster/backgrounded so it can reliably exhaust rather than time out.
+- Current browser path combines the heuristic with native C++ exact chunks when the Node server is available, otherwise JS exact fallbacks. The native high-bucket, 3+/4-row low-bucket, and 0/1/2-row low-bucket chunks can resume within a long-running discard candidate by skipping row partitions that were already completed in prior chunks. The proof space is represented end to end; arbitrary-hand certification now depends on continuing resumable chunks until all relevant buckets are exhausted or bounded below the incumbent.
 - Later replace or augment the search engine with a certified exact solver. Good candidates are a branch-and-bound line assignment solver, a compiled CP-SAT/ILP backend, or a web worker that can prove exhaustion.
 
 ## Normal Mode Money Optimizer
@@ -314,11 +314,12 @@ Total: $4550 * 6 = $27300
 
 Current direction:
 
-- Keep the browser UI interactive and honest: it shows best-known/best-found placements by default, and only marks a deal proven when either `data/exact-proof-status.json` has a completed exact proof for that deal, browser-local native high-bucket progress has exhausted all high buckets with an incumbent above the 7-or-fewer-hand ceiling, or browser-local high plus 3+/4-row low-bucket progress has exhausted with an incumbent above the 0/1/2-row ceiling.
+- Keep the browser UI interactive and honest: it shows best-known/best-found placements by default, and only marks a deal proven when either `data/exact-proof-status.json` has a completed exact proof for that deal, browser-local native high-bucket progress has exhausted all high buckets with an incumbent above the 7-or-fewer-hand ceiling, browser-local high plus 3+/4-row low-bucket progress has exhausted with an incumbent above the 0/1/2-row ceiling, or all three native proof buckets have exhausted.
 - Run exact certification offline.
 - Use the compiled high-bucket geometry search in `tools/exact_fantasyland_10.cpp` via `tools/run_exact_10_chunks.py` for resumable discard chunks.
 - The `--high-buckets` mode searches every 8-, 9-, and 10-hand placement. This is enough to certify the current `$15270` sample incumbent because 7-or-fewer hands have a theoretical maximum of `$14400`.
 - The `--three-plus-low` mode searches the next lower proof bucket: all orientations with at least 3 scoring rows and at most 7 scoring grid hands. If this exhausts with an incumbent above `$8100`, the final 0/1/2-row region cannot beat it.
+- The `--low-two` mode searches the final 0/1/2-row region with at most 2 scoring columns. If this exhausts after the other two buckets, the deal is certified regardless of score.
 - Persist exact run chunks in `data/exact-high-runs.jsonl`.
 - Rebuild app-visible proof status with `tools/summarize_exact_10_log.py`, which writes `data/exact-proof-status.json`.
 - Mark a deal as proven only when every relevant bucket has either been exhausted or bounded below the saved best-known score.

@@ -176,8 +176,10 @@ struct Solver {
   uint64_t maxRows = 0;
   bool highBuckets = false;
   bool threePlusLow = false;
+  bool lowTwo = false;
   int minGridHandCount = 0;
   int maxGridHandCount = 9;
+  int maxColumnHandCount = 4;
 
   bool over_time() {
     if (secondsLimit <= 0) return false;
@@ -432,7 +434,8 @@ struct Solver {
       optimisticColumns += bestForColumn;
     }
 
-    int optimisticGridHandCount = std::min(maxGridHandCount, rowHandCount + 4 + (cornerUpper > 0 ? 1 : 0));
+    int optimisticGridHandCount =
+        std::min(maxGridHandCount, rowHandCount + maxColumnHandCount + (cornerUpper > 0 ? 1 : 0));
     if (optimisticGridHandCount < minGridHandCount) return;
     int optimisticGridBase = rowValue + optimisticColumns + cornerUpper * 2;
     if (score_from_parts(optimisticGridBase, optimisticGridHandCount, discardBonus).total <= best.total) return;
@@ -460,6 +463,7 @@ struct Solver {
           }
 
           int baseGridHandCount = rowHandCount + columnHandCount;
+          if (columnHandCount > maxColumnHandCount) continue;
           if (baseGridHandCount > maxGridHandCount) continue;
           int candidateCornerUpper = baseGridHandCount < maxGridHandCount ? cornerUpper : 0;
           int upperGridHandCount = baseGridHandCount + (candidateCornerUpper > 0 ? 1 : 0);
@@ -631,6 +635,37 @@ struct Solver {
     }
   }
 
+  void search_low_rows(Mask remaining, int depth, int rowValue, int rowHandCount, int discardBonus, Mask discard) {
+    if (over_time() || rowLimitHit) return;
+    if (depth == 4) {
+      if (remaining != 0 || rowHandCount > 2) return;
+      finish_row_partition(rowValue, rowHandCount, discardBonus, discard);
+      return;
+    }
+
+    Mask lowBit = Mask(1) << lowest_bit_index(remaining);
+    for (Mask candidate : four_card_submasks(remaining)) {
+      if (timedOut || rowLimitHit || over_time()) return;
+      if ((candidate & lowBit) == 0) continue;
+      int handValue = value[candidate];
+      int nextRowHandCount = rowHandCount + (handValue > 0 ? 1 : 0);
+      if (nextRowHandCount > 2) continue;
+
+      if (skipRowsRemaining == 0) {
+        int rowsLeft = 3 - depth;
+        int positiveRowsLeft = 2 - nextRowHandCount;
+        int optimisticRowValue = rowValue + handValue + std::min(rowsLeft, positiveRowsLeft) * 450;
+        int optimisticGridBase = optimisticRowValue + maxColumnHandCount * 450 + 900;
+        int optimisticGridHandCount =
+            std::min(maxGridHandCount, nextRowHandCount + maxColumnHandCount + 1);
+        if (score_from_parts(optimisticGridBase, optimisticGridHandCount, discardBonus).total <= best.total) continue;
+      }
+
+      rowMasks[depth] = candidate;
+      search_low_rows(remaining ^ candidate, depth + 1, rowValue + handValue, nextRowHandCount, discardBonus, discard);
+    }
+  }
+
   void initialize(const std::vector<std::string>& inputCards, int incumbent = 0) {
     cards = inputCards;
     best.total = incumbent;
@@ -658,11 +693,13 @@ struct Solver {
   }
 
   void solve(double seconds, int incumbent, int discardLimit, int skipDiscardCount, uint64_t skipRowCount,
-             uint64_t rowLimit, bool includeHighBuckets, bool includeThreePlusLow) {
+             uint64_t rowLimit, bool includeHighBuckets, bool includeThreePlusLow, bool includeLowTwo) {
     highBuckets = includeHighBuckets;
     threePlusLow = includeThreePlusLow;
+    lowTwo = includeLowTwo;
     minGridHandCount = 0;
-    maxGridHandCount = threePlusLow ? 7 : 9;
+    maxGridHandCount = lowTwo ? 5 : (threePlusLow ? 7 : 9);
+    maxColumnHandCount = lowTwo ? 2 : 4;
     secondsLimit = seconds;
     maxDiscards = discardLimit;
     skipDiscards = skipDiscardCount;
@@ -672,7 +709,7 @@ struct Solver {
     started = std::chrono::steady_clock::now();
     Mask all = (Mask(1) << 20) - 1;
     int seenDiscards = 0;
-    const auto& discardCandidates = (highBuckets || threePlusLow) ? allDiscards : positives;
+    const auto& discardCandidates = (highBuckets || threePlusLow || lowTwo) ? allDiscards : positives;
     for (const auto& discardCandidate : discardCandidates) {
       if (over_time()) break;
       if (seenDiscards++ < skipDiscards) continue;
@@ -684,10 +721,10 @@ struct Solver {
       Mask board = all ^ discardCandidate.mask;
       int discardBonus = discardCandidate.value * 3;
       currentDiscardRowsCompleted = 0;
-      int absoluteGridUpper = threePlusLow ? (450 * 6 + 900) : (450 * 8 + 900);
-      int absoluteGridHandCount = threePlusLow ? 7 : 9;
+      int absoluteGridUpper = lowTwo ? (450 * 4 + 900) : (threePlusLow ? (450 * 6 + 900) : (450 * 8 + 900));
+      int absoluteGridHandCount = lowTwo ? 5 : (threePlusLow ? 7 : 9);
       int absoluteTotalUpper = 0;
-      if (threePlusLow) {
+      if (threePlusLow || lowTwo) {
         absoluteTotalUpper = score_from_parts(absoluteGridUpper, absoluteGridHandCount, discardBonus).total;
       } else {
         absoluteTotalUpper = highBuckets ? absoluteGridUpper * 5 : (absoluteGridUpper + discardBonus) * 6;
@@ -699,7 +736,11 @@ struct Solver {
         fullyCheckedDiscards++;
         continue;
       }
-      search_rows(board, board, 0, 0, discardBonus, discardCandidate.mask);
+      if (lowTwo) {
+        search_low_rows(board, 0, 0, 0, discardBonus, discardCandidate.mask);
+      } else {
+        search_rows(board, board, 0, 0, discardBonus, discardCandidate.mask);
+      }
       if (!timedOut && !rowLimitHit && threePlusLow) {
         search_one_dead_row(board, discardBonus, discardCandidate.mask);
       }
@@ -749,7 +790,7 @@ struct Solver {
 
 std::vector<std::string> parse_cards(int argc, char** argv, bool& sample, double& seconds, int& incumbent,
                                      int& discardLimit, int& skipDiscards, uint64_t& skipRows, uint64_t& rowLimit,
-                                     bool& highBuckets, bool& threePlusLow) {
+                                     bool& highBuckets, bool& threePlusLow, bool& lowTwo) {
   std::vector<std::string> cards;
   sample = false;
   seconds = 0;
@@ -760,6 +801,7 @@ std::vector<std::string> parse_cards(int argc, char** argv, bool& sample, double
   rowLimit = 0;
   highBuckets = false;
   threePlusLow = false;
+  lowTwo = false;
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "--sample") {
@@ -780,6 +822,8 @@ std::vector<std::string> parse_cards(int argc, char** argv, bool& sample, double
       highBuckets = true;
     } else if (arg == "--three-plus-low") {
       threePlusLow = true;
+    } else if (arg == "--low-two") {
+      lowTwo = true;
     } else {
       cards.push_back(arg);
     }
@@ -798,8 +842,9 @@ int main(int argc, char** argv) {
   uint64_t rowLimit = 0;
   bool highBuckets = false;
   bool threePlusLow = false;
+  bool lowTwo = false;
   auto cards = parse_cards(argc, argv, sample, seconds, incumbent, discardLimit, skipDiscards, skipRows, rowLimit,
-                           highBuckets, threePlusLow);
+                           highBuckets, threePlusLow, lowTwo);
   if (cards.size() != 20) {
     std::cerr << "Provide 20 cards or --sample\n";
     return 2;
@@ -807,10 +852,12 @@ int main(int argc, char** argv) {
 
   Solver solver;
   solver.initialize(cards, incumbent);
-  solver.solve(seconds, incumbent, discardLimit, skipDiscards, skipRows, rowLimit, highBuckets, threePlusLow);
+  solver.solve(seconds, incumbent, discardLimit, skipDiscards, skipRows, rowLimit, highBuckets, threePlusLow, lowTwo);
 
   std::cout << "{\n";
-  std::cout << "  \"mode\": \"" << (threePlusLow ? "three-plus-low" : (highBuckets ? "high-buckets" : "10-hand")) << "\",\n";
+  std::cout << "  \"mode\": \""
+            << (lowTwo ? "low-two" : (threePlusLow ? "three-plus-low" : (highBuckets ? "high-buckets" : "10-hand")))
+            << "\",\n";
   std::cout << "  \"bestTotal\": " << solver.best.total << ",\n";
   std::cout << "  \"bestBase\": " << solver.best.base << ",\n";
   std::cout << "  \"bestHandCount\": " << solver.best.handCount << ",\n";
@@ -830,7 +877,7 @@ int main(int argc, char** argv) {
   std::cout << "  \"openDiscardRowsCompleted\": " << solver.openDiscardRowsCompleted << ",\n";
   std::cout << "  \"rowLimitHit\": " << (solver.rowLimitHit ? "true" : "false") << ",\n";
   std::cout << "  \"candidateDiscards\": "
-            << ((highBuckets || threePlusLow) ? solver.allDiscards.size() : solver.positives.size()) << ",\n";
+            << ((highBuckets || threePlusLow || lowTwo) ? solver.allDiscards.size() : solver.positives.size()) << ",\n";
   std::cout << "  \"rowPartitions\": " << solver.rowPartitions << ",\n";
   std::cout << "  \"columnPartitions\": " << solver.columnPartitions << ",\n";
   std::cout << "  \"discard\": \"" << (solver.best.hasPlacement ? join_cards(cards, solver.best.discard) : "") << "\",\n";

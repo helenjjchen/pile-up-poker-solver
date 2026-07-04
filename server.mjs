@@ -180,11 +180,11 @@ async function handleExactHighChunk(request, response) {
   const discardLimit = Math.max(0, Math.floor(Number(payload.discardLimit ?? 0)));
   const skipRows = Math.max(0, Math.floor(Number(payload.skipRows ?? 0)));
   const rowLimit = Math.max(0, Math.floor(Number(payload.rowLimit ?? 0)));
-  const mode = payload.mode === "three-plus-low" ? "three-plus-low" : "high-buckets";
+  const mode = payload.mode === "three-plus-low" || payload.mode === "low-two" ? payload.mode : "high-buckets";
 
   const args = [
     ...payload.cards,
-    mode === "three-plus-low" ? "--three-plus-low" : "--high-buckets",
+    mode === "low-two" ? "--low-two" : mode === "three-plus-low" ? "--three-plus-low" : "--high-buckets",
     "--seconds",
     String(seconds),
     "--incumbent",
