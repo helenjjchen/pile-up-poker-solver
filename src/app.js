@@ -5,7 +5,6 @@ import {
   SUIT_META,
   canonicalizeDeal,
   canonicalDealKey,
-  cardLabel,
   sortCardIds,
   translatePlacementToDeal,
 } from "./cards.js";
@@ -49,9 +48,12 @@ const showBestKnownButton = document.querySelector("#showBestKnownButton");
 const proofSummary = document.querySelector("#proofSummary");
 const boardGrid = document.querySelector("#boardGrid");
 const discardCards = document.querySelector("#discardCards");
+const rowAnnotations = document.querySelector("#rowAnnotations");
+const columnAnnotations = document.querySelector("#columnAnnotations");
+const cornerAnnotation = document.querySelector("#cornerAnnotation");
+const discardAnnotation = document.querySelector("#discardAnnotation");
 const solutionsRow = document.querySelector("#solutionsRow");
 const bucketList = document.querySelector("#bucketList");
-const breakdownList = document.querySelector("#breakdownList");
 const runtimeInfo = document.querySelector("#runtimeInfo");
 const BEST_KNOWN_STORAGE_KEY = "pile-up-poker.best-known-fantasyland.v2";
 const LEGACY_BEST_KNOWN_STORAGE_KEY = "pile-up-poker.best-known-fantasyland.v1";
@@ -1267,6 +1269,86 @@ function renderPlayingCard(cardId) {
   `;
 }
 
+function handAnnotationLabel(hand) {
+  if (hand.key === "straight-flush") return "STR. FLUSH";
+  if (hand.key === "four-kind") return "4 OF A KIND";
+  if (hand.key === "three-kind") return "3 OF A KIND";
+  return hand.shortLabel.toUpperCase();
+}
+
+function lineAmountLabel(hand, value, bonus = 1) {
+  const quality = hand.quality ? "★" : "";
+  if (bonus > 1) return `${money(hand.base)} × ${bonus}${quality}`;
+  return `${money(value)}${quality}`;
+}
+
+function renderLineAnnotation(line, className = "") {
+  if (!line?.scores) return `<div class="line-annotation ${className} is-empty"></div>`;
+  return `
+    <div class="line-annotation ${className}" title="${line.label}: ${line.hand.label}, ${money(line.value)}">
+      <strong>${lineAmountLabel(line.hand, line.value, line.bonus)}</strong>
+      <span>${handAnnotationLabel(line.hand)}</span>
+    </div>
+  `;
+}
+
+function applyLineAnnotation(element, line, className) {
+  element.className = `line-annotation ${className}${line?.scores ? "" : " is-empty"}`;
+  element.title = line?.scores ? `${line.label}: ${line.hand.label}, ${money(line.value)}` : "";
+  element.innerHTML = line?.scores
+    ? `
+      <strong>${lineAmountLabel(line.hand, line.value, line.bonus)}</strong>
+      <span>${handAnnotationLabel(line.hand)}</span>
+    `
+    : "";
+}
+
+function applyDiscardAnnotation(element, score) {
+  if (!score.discardHand || score.discardHand.base === 0) {
+    element.className = "line-annotation discard-line is-empty";
+    element.title = "";
+    element.innerHTML = "";
+    return;
+  }
+
+  if (!score.discardScores) {
+    element.className = "line-annotation discard-line is-muted";
+    element.title = "Discard only scores when all 9 grid hands score";
+    element.innerHTML = `
+      <strong>Not scored</strong>
+      <span>${handAnnotationLabel(score.discardHand)}</span>
+    `;
+    return;
+  }
+
+  element.className = "line-annotation discard-line";
+  element.title = `Discard: ${score.discardHand.label}, ${money(score.discardValue)}`;
+  element.innerHTML = `
+    <strong>${lineAmountLabel(score.discardHand, score.discardValue, 3)}</strong>
+    <span>${handAnnotationLabel(score.discardHand)}</span>
+  `;
+}
+
+function renderBoardAnnotations(score) {
+  const rows = score.lines.filter((line) => line.type === "row");
+  const columns = score.lines.filter((line) => line.type === "column");
+  const corner = score.lines.find((line) => line.type === "corner");
+
+  rowAnnotations.innerHTML = rows.map((line) => renderLineAnnotation(line, "row-line")).join("");
+  columnAnnotations.innerHTML = columns.map((line) => renderLineAnnotation(line, "column-line")).join("");
+  applyLineAnnotation(cornerAnnotation, corner, "corner-line");
+  applyDiscardAnnotation(discardAnnotation, score);
+}
+
+function renderEmptyBoardAnnotations() {
+  rowAnnotations.innerHTML = Array.from({ length: 4 }, () => renderLineAnnotation(null, "row-line")).join("");
+  columnAnnotations.innerHTML = Array.from({ length: 4 }, () => renderLineAnnotation(null, "column-line")).join("");
+  cornerAnnotation.className = "line-annotation corner-line is-empty";
+  cornerAnnotation.innerHTML = "";
+  discardAnnotation.className = "line-annotation discard-line is-empty";
+  discardAnnotation.innerHTML = "";
+}
+
 function renderDeck() {
   deckGrid.innerHTML = "";
   for (const card of DECK) {
@@ -1343,9 +1425,9 @@ function renderEmptyResult() {
   runtimeInfo.textContent = "Not run";
   boardGrid.innerHTML = Array.from({ length: 16 }, () => renderPlayingCard(null)).join("");
   discardCards.innerHTML = Array.from({ length: 4 }, () => renderPlayingCard(null)).join("");
+  renderEmptyBoardAnnotations();
   solutionsRow.innerHTML = "";
   bucketList.innerHTML = "";
-  breakdownList.innerHTML = "";
   renderBestKnownPanel();
   renderProofPanel();
 }
@@ -1423,6 +1505,7 @@ function renderResult() {
 
   boardGrid.innerHTML = solution.grid.map((cardId) => renderPlayingCard(cardId)).join("");
   discardCards.innerHTML = solution.discard.map((cardId) => renderPlayingCard(cardId)).join("");
+  renderBoardAnnotations(score);
 
   solutionsRow.innerHTML = "";
   latestResult.solutions.slice(0, 12).forEach((item, index) => {
@@ -1454,37 +1537,6 @@ function renderResult() {
     })
     .join("");
 
-  const discardLabel = score.discardScores ? score.discardHand.shortLabel : "Not scored";
-  const discardValue = score.discardScores ? money(score.discardValue) : "$0";
-  const rows = [
-    ...score.lines.map((line) => ({
-      label: line.label,
-      cards: line.cards.map(cardLabel).join(" "),
-      hand: line.hand.shortLabel,
-      value: money(line.value),
-      scores: line.scores,
-    })),
-    {
-      label: "Discard",
-      cards: solution.discard.map(cardLabel).join(" "),
-      hand: discardLabel,
-      value: discardValue,
-      scores: score.discardScores,
-    },
-  ];
-
-  breakdownList.innerHTML = rows
-    .map(
-      (row) => `
-        <div class="breakdown-row">
-          <div class="breakdown-label">${row.label}</div>
-          <div class="line-cards">${row.cards}</div>
-          <div class="breakdown-hand">${row.hand}</div>
-          <div class="breakdown-value">${row.value}</div>
-        </div>
-      `,
-    )
-    .join("");
   renderBestKnownPanel();
   renderProofPanel();
 }

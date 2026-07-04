@@ -91,9 +91,19 @@
             <div class="discard-stack">
               <div class="area-label">Discard</div>
               <div class="discard-cards" id="discardCards"></div>
+              <div class="line-annotation discard-line is-empty" id="discardAnnotation"></div>
             </div>
-            <div class="board-grid" id="boardGrid"></div>
+            <div class="board-stage">
+              <div class="line-annotation corner-line is-empty" id="cornerAnnotation"></div>
+              <div class="board-main">
+                <div class="board-grid" id="boardGrid"></div>
+                <div class="row-annotations" id="rowAnnotations"></div>
+                <div class="column-annotations" id="columnAnnotations"></div>
+              </div>
+            </div>
           </div>
+
+          <div class="runtime-info" id="runtimeInfo">Not run</div>
 
           <div class="solutions-row" id="solutionsRow"></div>
 
@@ -105,17 +115,10 @@
             <div class="bucket-list" id="bucketList"></div>
           </div>
 
-          <div class="breakdown-panel">
-            <div class="panel-heading">
-              <h2>Breakdown</h2>
-              <span id="runtimeInfo">Not run</span>
-            </div>
-            <div class="breakdown-list" id="breakdownList"></div>
-          </div>
         </section>
       </section>
     </main>
 
-    <script type="module" src="./src/app.js?v=exact-cache-7"></script>
+    <script type="module" src="./src/app.js?v=grid-annotations-1"></script>
   </body>
 </html>
