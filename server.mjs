@@ -178,6 +178,8 @@ async function handleExactHighChunk(request, response) {
   const incumbent = Math.max(0, Math.floor(Number(payload.incumbent ?? 0)));
   const skipDiscards = Math.max(0, Math.floor(Number(payload.skipDiscards ?? 0)));
   const discardLimit = Math.max(0, Math.floor(Number(payload.discardLimit ?? 0)));
+  const skipRows = Math.max(0, Math.floor(Number(payload.skipRows ?? 0)));
+  const rowLimit = Math.max(0, Math.floor(Number(payload.rowLimit ?? 0)));
 
   const args = [
     ...payload.cards,
@@ -188,6 +190,10 @@ async function handleExactHighChunk(request, response) {
     String(incumbent),
     "--skip-discards",
     String(skipDiscards),
+    "--skip-rows",
+    String(skipRows),
+    "--row-limit",
+    String(rowLimit),
     "--discard-limit",
     String(discardLimit),
   ];

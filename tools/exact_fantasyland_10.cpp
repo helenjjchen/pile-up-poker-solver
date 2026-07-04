@@ -138,11 +138,20 @@ struct Solver {
   uint64_t rowPartitions = 0;
   uint64_t columnPartitions = 0;
   uint64_t discardsChecked = 0;
+  uint64_t fullyCheckedDiscards = 0;
+  uint64_t rowPartitionsSkipped = 0;
+  uint64_t rowPartitionsCompleted = 0;
+  uint64_t currentDiscardRowsCompleted = 0;
+  uint64_t openDiscardRowsCompleted = 0;
   std::chrono::steady_clock::time_point started;
   double secondsLimit = 0;
   bool timedOut = false;
+  bool rowLimitHit = false;
   int maxDiscards = 0;
   int skipDiscards = 0;
+  uint64_t skipRows = 0;
+  uint64_t skipRowsRemaining = 0;
+  uint64_t maxRows = 0;
   bool highBuckets = false;
 
   bool over_time() {
@@ -353,11 +362,24 @@ struct Solver {
   }
 
   void search_rows(Mask board, Mask remaining, int depth, int rowValue, int discardBonus, Mask discard) {
-    if (over_time()) return;
+    if (over_time() || rowLimitHit) return;
     if (depth == 4) {
       if (remaining != 0) return;
-      rowPartitions++;
+      if (skipRowsRemaining > 0) {
+        skipRowsRemaining--;
+        rowPartitionsSkipped++;
+        return;
+      }
+      if (maxRows > 0 && rowPartitionsCompleted >= maxRows) {
+        rowLimitHit = true;
+        return;
+      }
       evaluate_columns_by_permutation(rowValue, discardBonus, discard);
+      if (!timedOut) {
+        rowPartitions++;
+        rowPartitionsCompleted++;
+        currentDiscardRowsCompleted++;
+      }
       return;
     }
 
@@ -374,7 +396,7 @@ struct Solver {
     for (Mask candidate : candidates) {
       rowMasks[depth] = candidate;
       search_rows(board, remaining ^ candidate, depth + 1, rowValue + value[candidate], discardBonus, discard);
-      if (timedOut) return;
+      if (timedOut || rowLimitHit) return;
     }
   }
 
@@ -404,11 +426,15 @@ struct Solver {
     });
   }
 
-  void solve(double seconds, int incumbent, int discardLimit, int skipDiscardCount, bool includeHighBuckets) {
+  void solve(double seconds, int incumbent, int discardLimit, int skipDiscardCount, uint64_t skipRowCount,
+             uint64_t rowLimit, bool includeHighBuckets) {
     highBuckets = includeHighBuckets;
     secondsLimit = seconds;
     maxDiscards = discardLimit;
     skipDiscards = skipDiscardCount;
+    skipRows = skipRowCount;
+    skipRowsRemaining = skipRowCount;
+    maxRows = rowLimit;
     started = std::chrono::steady_clock::now();
     Mask all = (Mask(1) << 20) - 1;
     int seenDiscards = 0;
@@ -423,13 +449,23 @@ struct Solver {
       }
       Mask board = all ^ discardCandidate.mask;
       int discardBonus = discardCandidate.value * 3;
+      currentDiscardRowsCompleted = 0;
       int absoluteGridUpper = 450 * 8 + 900;
       int absoluteTotalUpper = highBuckets ? absoluteGridUpper * 5 : (absoluteGridUpper + discardBonus) * 6;
       if (highBuckets && discardBonus > 0) {
         absoluteTotalUpper = std::max(absoluteTotalUpper, (absoluteGridUpper + discardBonus) * 6);
       }
-      if (absoluteTotalUpper <= best.total) continue;
+      if (absoluteTotalUpper <= best.total) {
+        fullyCheckedDiscards++;
+        continue;
+      }
       search_rows(board, board, 0, 0, discardBonus, discardCandidate.mask);
+      if (timedOut || rowLimitHit) {
+        openDiscardRowsCompleted = currentDiscardRowsCompleted;
+        break;
+      }
+      fullyCheckedDiscards++;
+      openDiscardRowsCompleted = 0;
     }
   }
 
@@ -469,13 +505,16 @@ struct Solver {
 };
 
 std::vector<std::string> parse_cards(int argc, char** argv, bool& sample, double& seconds, int& incumbent,
-                                     int& discardLimit, int& skipDiscards, bool& highBuckets) {
+                                     int& discardLimit, int& skipDiscards, uint64_t& skipRows, uint64_t& rowLimit,
+                                     bool& highBuckets) {
   std::vector<std::string> cards;
   sample = false;
   seconds = 0;
   incumbent = 0;
   discardLimit = 0;
   skipDiscards = 0;
+  skipRows = 0;
+  rowLimit = 0;
   highBuckets = false;
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -489,6 +528,10 @@ std::vector<std::string> parse_cards(int argc, char** argv, bool& sample, double
       discardLimit = std::atoi(argv[++i]);
     } else if (arg == "--skip-discards" && i + 1 < argc) {
       skipDiscards = std::atoi(argv[++i]);
+    } else if (arg == "--skip-rows" && i + 1 < argc) {
+      skipRows = std::strtoull(argv[++i], nullptr, 10);
+    } else if (arg == "--row-limit" && i + 1 < argc) {
+      rowLimit = std::strtoull(argv[++i], nullptr, 10);
     } else if (arg == "--high-buckets") {
       highBuckets = true;
     } else {
@@ -505,8 +548,11 @@ int main(int argc, char** argv) {
   int incumbent = 0;
   int discardLimit = 0;
   int skipDiscards = 0;
+  uint64_t skipRows = 0;
+  uint64_t rowLimit = 0;
   bool highBuckets = false;
-  auto cards = parse_cards(argc, argv, sample, seconds, incumbent, discardLimit, skipDiscards, highBuckets);
+  auto cards = parse_cards(argc, argv, sample, seconds, incumbent, discardLimit, skipDiscards, skipRows, rowLimit,
+                           highBuckets);
   if (cards.size() != 20) {
     std::cerr << "Provide 20 cards or --sample\n";
     return 2;
@@ -514,7 +560,7 @@ int main(int argc, char** argv) {
 
   Solver solver;
   solver.initialize(cards, incumbent);
-  solver.solve(seconds, incumbent, discardLimit, skipDiscards, highBuckets);
+  solver.solve(seconds, incumbent, discardLimit, skipDiscards, skipRows, rowLimit, highBuckets);
 
   std::cout << "{\n";
   std::cout << "  \"mode\": \"" << (highBuckets ? "high-buckets" : "10-hand") << "\",\n";
@@ -527,8 +573,15 @@ int main(int argc, char** argv) {
   std::cout << "  \"exhausted10HandBucket\": " << (!solver.timedOut && (discardLimit == 0 || static_cast<int>(solver.discardsChecked) < discardLimit) ? "true" : "false") << ",\n";
   std::cout << "  \"exhaustedSearchBucket\": " << (!solver.timedOut && (discardLimit == 0 || static_cast<int>(solver.discardsChecked) < discardLimit) ? "true" : "false") << ",\n";
   std::cout << "  \"skipDiscards\": " << skipDiscards << ",\n";
+  std::cout << "  \"skipRows\": " << skipRows << ",\n";
   std::cout << "  \"discardLimit\": " << discardLimit << ",\n";
+  std::cout << "  \"rowLimit\": " << rowLimit << ",\n";
   std::cout << "  \"discardsChecked\": " << solver.discardsChecked << ",\n";
+  std::cout << "  \"fullyCheckedDiscards\": " << solver.fullyCheckedDiscards << ",\n";
+  std::cout << "  \"rowPartitionsSkipped\": " << solver.rowPartitionsSkipped << ",\n";
+  std::cout << "  \"rowPartitionsCompleted\": " << solver.rowPartitionsCompleted << ",\n";
+  std::cout << "  \"openDiscardRowsCompleted\": " << solver.openDiscardRowsCompleted << ",\n";
+  std::cout << "  \"rowLimitHit\": " << (solver.rowLimitHit ? "true" : "false") << ",\n";
   std::cout << "  \"candidateDiscards\": " << (highBuckets ? solver.allDiscards.size() : solver.positives.size()) << ",\n";
   std::cout << "  \"rowPartitions\": " << solver.rowPartitions << ",\n";
   std::cout << "  \"columnPartitions\": " << solver.columnPartitions << ",\n";

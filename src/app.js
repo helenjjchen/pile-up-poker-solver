@@ -9,8 +9,8 @@ import {
   sortCardIds,
   translatePlacementToDeal,
 } from "./cards.js";
-import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=exact-cache-4";
-import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=exact-cache-4";
+import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=exact-cache-5";
+import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=exact-cache-5";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
 
 const selected = new Set();
@@ -355,6 +355,7 @@ function exactProofForCurrentDeal() {
   const bestKnownTotal = bestKnown?.score.total ?? 0;
   const highCandidateDiscards = Number(progress.highCandidateDiscards ?? 0);
   const highCompletedDiscards = Number(progress.highCompletedDiscards ?? 0);
+  const highCurrentDiscardRows = Number(progress.highCurrentDiscardRows ?? 0);
   const highProvesOptimum = progress.highExhausted && bestKnownTotal > theoreticalMaxTotalForHandCount(7);
 
   return {
@@ -362,6 +363,7 @@ function exactProofForCurrentDeal() {
     scope: highProvesOptimum ? "Local high buckets" : "Local exact high buckets",
     completedDiscards: highCompletedDiscards,
     totalCandidateDiscards: highCandidateDiscards,
+    currentDiscardRows: highCurrentDiscardRows,
     bestKnownTotal,
     canonicalDealKey: canonicalKey,
   };
@@ -648,6 +650,7 @@ async function solveFantasylandExactHighNative(cardIds, incumbentSolution, timeL
   const previousProgress = exactProgressForCurrentDeal();
   const previousCandidateCount = Number(previousProgress?.highCandidateDiscards ?? 0);
   const previousCompleted = Number(previousProgress?.highCompletedDiscards ?? 0);
+  const previousOpenRows = Number(previousProgress?.highCurrentDiscardRows ?? 0);
 
   if (previousProgress?.highExhausted) {
     return nativeExactHighResult({
@@ -661,6 +664,7 @@ async function solveFantasylandExactHighNative(cardIds, incumbentSolution, timeL
       timedOut: false,
       nativeHighProgress: {
         completedDiscards: previousCompleted,
+        currentDiscardRows: 0,
         candidateDiscards: previousCandidateCount,
         exhausted: true,
         advanced: false,
@@ -683,6 +687,7 @@ async function solveFantasylandExactHighNative(cardIds, incumbentSolution, timeL
         seconds,
         incumbent: incumbentSolution?.score.total ?? 0,
         skipDiscards,
+        skipRows: previousOpenRows,
         discardLimit: 0,
       }),
     });
@@ -696,20 +701,35 @@ async function solveFantasylandExactHighNative(cardIds, incumbentSolution, timeL
   const elapsedMs = performance.now() - startedAt;
   const candidateCount = Number(payload.candidateDiscards ?? previousCandidateCount);
   const checkedThisChunk = Number(payload.discardsChecked ?? 0);
-  const safeCompletedThisChunk = payload.timedOut ? Math.max(0, checkedThisChunk - 1) : checkedThisChunk;
+  const fullyCheckedThisChunk = Number(
+    payload.fullyCheckedDiscards ?? (payload.timedOut ? Math.max(0, checkedThisChunk - 1) : checkedThisChunk),
+  );
   const completedDiscards = candidateCount
-    ? Math.min(candidateCount, skipDiscards + safeCompletedThisChunk)
-    : skipDiscards + safeCompletedThisChunk;
-  const exhaustedHighBuckets = Boolean(candidateCount && !payload.timedOut && completedDiscards >= candidateCount);
+    ? Math.min(candidateCount, skipDiscards + fullyCheckedThisChunk)
+    : skipDiscards + fullyCheckedThisChunk;
+  const openRowsThisChunk = Number(payload.openDiscardRowsCompleted ?? 0);
+  const currentDiscardRows =
+    completedDiscards >= candidateCount || (!payload.timedOut && !payload.rowLimitHit)
+      ? 0
+      : fullyCheckedThisChunk > 0
+        ? openRowsThisChunk
+        : previousOpenRows + openRowsThisChunk;
+  const exhaustedHighBuckets = Boolean(
+    candidateCount && !payload.timedOut && !payload.rowLimitHit && completedDiscards >= candidateCount,
+  );
   const nativePlacement = nativePlacementFromPayload(payload);
   if (nativePlacement) saveBestKnownSolution(nativePlacement, "native exact high-bucket");
 
   const progress = saveExactProgressForCurrentDeal({
     highCandidateDiscards: candidateCount,
     highCompletedDiscards: completedDiscards,
+    highCurrentDiscardRows: currentDiscardRows,
     highExhausted: exhaustedHighBuckets,
     highLastChunkStart: skipDiscards,
+    highLastChunkRowStart: previousOpenRows,
     highLastChunkChecked: checkedThisChunk,
+    highLastChunkFullyChecked: fullyCheckedThisChunk,
+    highLastChunkRowsCompleted: openRowsThisChunk,
     highLastChunkTimedOut: Boolean(payload.timedOut),
     highLastBestTotal: nativePlacement?.score.total ?? incumbentSolution?.score.total ?? 0,
   });
@@ -729,13 +749,14 @@ async function solveFantasylandExactHighNative(cardIds, incumbentSolution, timeL
     nativeHighProgress: {
       ...progress,
       completedDiscards,
+      currentDiscardRows,
       candidateDiscards: candidateCount,
       exhausted: exhaustedHighBuckets,
-      advanced: completedDiscards > skipDiscards,
+      advanced: completedDiscards > skipDiscards || currentDiscardRows > previousOpenRows,
       rowPartitions: Number(payload.rowPartitions ?? 0),
       columnPartitions: Number(payload.columnPartitions ?? 0),
     },
-    searchOrder: `Native exact high-bucket chunk checked ${checkedThisChunk.toLocaleString()} discard candidate${checkedThisChunk === 1 ? "" : "s"} from offset ${skipDiscards.toLocaleString()}; local progress is ${completedDiscards.toLocaleString()}/${candidateCount.toLocaleString()}.`,
+    searchOrder: `Native exact high-bucket chunk checked ${checkedThisChunk.toLocaleString()} discard candidate${checkedThisChunk === 1 ? "" : "s"} from offset ${skipDiscards.toLocaleString()} and row offset ${previousOpenRows.toLocaleString()}; local progress is ${completedDiscards.toLocaleString()}/${candidateCount.toLocaleString()} discards plus ${currentDiscardRows.toLocaleString()} rows on the current discard.`,
   });
 }
 
@@ -875,7 +896,9 @@ function renderProofPanel() {
     return;
   }
 
-  proofSummary.textContent = `${proof.scope} proof running: checked ${proof.completedDiscards}/${proof.totalCandidateDiscards} discard candidates. No score above ${money(proof.bestKnownTotal)} found yet.`;
+  const rowProgress =
+    proof.currentDiscardRows > 0 ? ` plus ${proof.currentDiscardRows.toLocaleString()} row partitions on the current discard` : "";
+  proofSummary.textContent = `${proof.scope} proof running: checked ${proof.completedDiscards}/${proof.totalCandidateDiscards} discard candidates${rowProgress}. No score above ${money(proof.bestKnownTotal)} found yet.`;
 }
 
 function activeSolution() {
