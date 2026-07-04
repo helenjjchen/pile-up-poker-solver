@@ -386,12 +386,14 @@ struct Solver {
     auto candidates = row_candidates(remaining);
     int optimistic = optimistic_row_value(candidates, remaining, 4 - depth);
     if (optimistic < 0) return;
-    int optimisticGridBase = rowValue + optimistic + 3600 + 900;
-    int optimisticTotal = highBuckets ? optimisticGridBase * 5 : (optimisticGridBase + discardBonus) * 6;
-    if (highBuckets && discardBonus > 0) {
-      optimisticTotal = std::max(optimisticTotal, (optimisticGridBase + discardBonus) * 6);
+    if (skipRowsRemaining == 0) {
+      int optimisticGridBase = rowValue + optimistic + 3600 + 900;
+      int optimisticTotal = highBuckets ? optimisticGridBase * 5 : (optimisticGridBase + discardBonus) * 6;
+      if (highBuckets && discardBonus > 0) {
+        optimisticTotal = std::max(optimisticTotal, (optimisticGridBase + discardBonus) * 6);
+      }
+      if (optimisticTotal <= best.total) return;
     }
-    if (optimisticTotal <= best.total) return;
 
     for (Mask candidate : candidates) {
       rowMasks[depth] = candidate;
