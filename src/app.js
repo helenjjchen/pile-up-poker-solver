@@ -20,6 +20,9 @@ let seededBestKnown = new Map();
 let sharedBestKnown = new Map();
 let localBestKnown = new Map();
 let exactProofStatuses = new Map();
+let exactWorker = null;
+let exactWorkerRequestId = 0;
+let exactWorkerUnavailable = false;
 let optimizerTimerInterval = null;
 let optimizerTimerStartedAt = 0;
 let optimizerTimerBudget = 0;
@@ -646,6 +649,99 @@ function uniqueSortedSolutions(solutions) {
     .filter(Boolean)
     .sort((a, b) => compareScores(b.score, a.score))
     .filter((solution, index, allSolutions) => allSolutions.findIndex((item) => item.key === solution.key) === index);
+}
+
+function getExactWorker() {
+  if (exactWorkerUnavailable || typeof Worker === "undefined") return null;
+  if (exactWorker) return exactWorker;
+
+  try {
+    exactWorker = new Worker(new URL("./exactSolverWorker.js", import.meta.url), { type: "module" });
+  } catch {
+    exactWorkerUnavailable = true;
+    exactWorker = null;
+  }
+
+  return exactWorker;
+}
+
+function resetExactWorker() {
+  if (exactWorker) {
+    exactWorker.terminate();
+  }
+  exactWorker = null;
+}
+
+async function solveFantasylandExactInWorker(cardIds, options) {
+  const worker = getExactWorker();
+  if (!worker) return { status: "unavailable" };
+
+  const id = String((exactWorkerRequestId += 1));
+  const timeoutMs = Math.max(1500, Number(options.timeLimitMs ?? 0) + 1500);
+
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const cleanup = () => {
+      window.clearTimeout(timeoutId);
+      worker.removeEventListener("message", handleMessage);
+      worker.removeEventListener("error", handleError);
+      worker.removeEventListener("messageerror", handleError);
+    };
+
+    const finish = (response) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(response);
+    };
+
+    const failAndReset = (status) => {
+      if (settled) return;
+      if (status === "failed") exactWorkerUnavailable = true;
+      resetExactWorker();
+      finish({ status });
+    };
+
+    const handleMessage = (event) => {
+      const message = event.data ?? {};
+      if (message.id !== id) return;
+      if (message.ok) {
+        finish({ status: "ok", result: message.payload });
+      } else {
+        failAndReset("failed");
+      }
+    };
+
+    const handleError = () => failAndReset("failed");
+    const timeoutId = window.setTimeout(() => failAndReset("timed-out"), timeoutMs);
+
+    worker.addEventListener("message", handleMessage);
+    worker.addEventListener("error", handleError);
+    worker.addEventListener("messageerror", handleError);
+
+    try {
+      worker.postMessage({
+        id,
+        type: "solve-exact",
+        payload: {
+          cardIds,
+          options,
+          preferWasm: true,
+        },
+      });
+    } catch {
+      failAndReset("failed");
+    }
+  });
+}
+
+async function solveFantasylandExactBucket(cardIds, options) {
+  const workerResponse = await solveFantasylandExactInWorker(cardIds, options);
+  if (workerResponse.status === "ok") return workerResponse.result;
+  if (workerResponse.status === "timed-out") return null;
+
+  return solveFantasylandExactHighBuckets(cardIds, options);
 }
 
 function nativePlacementFromPayload(payload) {
@@ -1440,7 +1536,7 @@ async function optimize() {
     setOptimizerTimerPhase("Exact proof");
     let exactHighResult = await solveFantasylandExactHighNative(selectedCards(), latestResult.best, exactBudget);
     if (!exactHighResult) {
-      exactHighResult = solveFantasylandExactHighBuckets(selectedCards(), {
+      exactHighResult = await solveFantasylandExactBucket(selectedCards(), {
         timeLimitMs: exactBudget,
         maxSolutions: 24,
         incumbentSolution: latestResult.best,
@@ -1448,7 +1544,7 @@ async function optimize() {
       });
     }
     latestResult = mergeSolverResults(latestResult, exactHighResult);
-    let remainingExactBudget = exactHighResult.exhaustedHighBuckets
+    let remainingExactBudget = exactHighResult?.exhaustedHighBuckets
       ? Math.max(0, exactBudget - (performance.now() - exactStartedAt))
       : 0;
     if (!latestResult.exact && remainingExactBudget > 50) {
@@ -1459,7 +1555,7 @@ async function optimize() {
         remainingExactBudget,
       );
       if (!exactThreePlusResult) {
-        exactThreePlusResult = solveFantasylandExactHighBuckets(selectedCards(), {
+        exactThreePlusResult = await solveFantasylandExactBucket(selectedCards(), {
           timeLimitMs: remainingExactBudget,
           maxSolutions: 24,
           minGridHandCount: 0,
@@ -1471,7 +1567,7 @@ async function optimize() {
         });
       }
       latestResult = mergeSolverResults(latestResult, exactThreePlusResult);
-      remainingExactBudget = exactThreePlusResult.exhaustedThreePlusRows
+      remainingExactBudget = exactThreePlusResult?.exhaustedThreePlusRows
         ? Math.max(0, exactBudget - (performance.now() - exactStartedAt))
         : 0;
       if (!latestResult.exact && remainingExactBudget > 50) {
@@ -1482,7 +1578,7 @@ async function optimize() {
           remainingExactBudget,
         );
         if (!exactLowRowsResult) {
-          exactLowRowsResult = solveFantasylandExactHighBuckets(selectedCards(), {
+          exactLowRowsResult = await solveFantasylandExactBucket(selectedCards(), {
             timeLimitMs: remainingExactBudget,
             maxSolutions: 24,
             minGridHandCount: 0,

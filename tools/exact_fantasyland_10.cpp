@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -156,6 +157,8 @@ struct Solver {
   std::array<int, 1 << 20> value{};
   std::vector<Candidate> positives;
   std::vector<Candidate> allDiscards;
+  std::unordered_map<Mask, std::vector<Mask>> rowCandidateCache;
+  std::unordered_map<Mask, std::vector<Mask>> submask4Cache;
   Best best;
   uint64_t rowPartitions = 0;
   uint64_t columnPartitions = 0;
@@ -194,7 +197,10 @@ struct Solver {
   std::array<Mask, 4> rowMasks{};
   std::array<Mask, 4> colMasks{};
 
-  std::vector<Mask> row_candidates(Mask remaining) {
+  const std::vector<Mask>& row_candidates(Mask remaining) {
+    auto cached = rowCandidateCache.find(remaining);
+    if (cached != rowCandidateCache.end()) return cached->second;
+
     int low = lowest_bit_index(remaining);
     Mask lowBit = Mask(1) << low;
     std::vector<Mask> result;
@@ -207,7 +213,8 @@ struct Solver {
       if (value[a] != value[b]) return value[a] > value[b];
       return a < b;
     });
-    return result;
+    auto [inserted, _] = rowCandidateCache.emplace(remaining, std::move(result));
+    return inserted->second;
   }
 
   std::array<Mask, 4> rowBits(Mask row) {
@@ -273,21 +280,22 @@ struct Solver {
 
   int corner_upper_bound_for_rows() {
     int bestCorner = 0;
-    std::array<std::vector<Mask>, 4> rowPairs;
+    std::array<std::array<Mask, 6>, 4> rowPairs{};
     for (int row = 0; row < 4; ++row) {
       auto bits = rowBits(rowMasks[row]);
+      int pairIndex = 0;
       for (int a = 0; a < 3; ++a) {
         for (int b = a + 1; b < 4; ++b) {
-          rowPairs[row].push_back(bits[a] | bits[b]);
+          rowPairs[row][pairIndex++] = bits[a] | bits[b];
         }
       }
     }
 
     for (int r1 = 0; r1 < 3; ++r1) {
       for (int r2 = r1 + 1; r2 < 4; ++r2) {
-        for (Mask firstPair : rowPairs[r1]) {
-          for (Mask secondPair : rowPairs[r2]) {
-            bestCorner = std::max(bestCorner, value[firstPair | secondPair]);
+        for (int firstIndex = 0; firstIndex < 6; ++firstIndex) {
+          for (int secondIndex = 0; secondIndex < 6; ++secondIndex) {
+            bestCorner = std::max(bestCorner, value[rowPairs[r1][firstIndex] | rowPairs[r2][secondIndex]]);
           }
         }
       }
@@ -314,7 +322,7 @@ struct Solver {
 
     // Upper bound for columns on this row partition: choose the best legal column for each row-0 card
     // without enforcing that rows 1-3 are used exactly once. This is deliberately loose but cheap.
-    int optimisticColumns = 0;
+    std::array<int, 4> optimisticColumnValues{};
     for (int c0 = 0; c0 < 4; ++c0) {
       int bestForColumn = 0;
       for (int c1 = 0; c1 < 4; ++c1)
@@ -324,8 +332,11 @@ struct Solver {
             bestForColumn = std::max(bestForColumn, value[col]);
           }
       if (!highBuckets && bestForColumn == 0) return;
-      optimisticColumns += bestForColumn;
+      optimisticColumnValues[c0] = bestForColumn;
     }
+    std::sort(optimisticColumnValues.begin(), optimisticColumnValues.end(), std::greater<int>());
+    int optimisticColumns = 0;
+    for (int index = 0; index < maxColumnHandCount; ++index) optimisticColumns += optimisticColumnValues[index];
     int optimisticGridBase = rowValue + optimisticColumns + cornerUpper * 2;
     int optimisticTotal = highBuckets ? optimisticGridBase * 5 : (optimisticGridBase + discardBonus) * 6;
     if (highBuckets && discardBonus > 0) {
@@ -539,22 +550,13 @@ struct Solver {
       return;
     }
 
-    auto candidates = row_candidates(remaining);
+    const auto& candidates = row_candidates(remaining);
     int optimistic = optimistic_row_value(candidates, remaining, 4 - depth);
     if (optimistic < 0) return;
     if (skipRowsRemaining == 0) {
-      int optimisticTotal = 0;
-      if (threePlusLow) {
-        int optimisticGridBase = rowValue + optimistic + 3600 + 900;
-        int optimisticGridHandCount = std::min(maxGridHandCount, 4 + 4 + 1);
-        optimisticTotal = score_from_parts(optimisticGridBase, optimisticGridHandCount, discardBonus).total;
-      } else {
-        int optimisticGridBase = rowValue + optimistic + 3600 + 900;
-        optimisticTotal = highBuckets ? optimisticGridBase * 5 : (optimisticGridBase + discardBonus) * 6;
-        if (highBuckets && discardBonus > 0) {
-          optimisticTotal = std::max(optimisticTotal, (optimisticGridBase + discardBonus) * 6);
-        }
-      }
+      int optimisticGridBase = rowValue + optimistic + maxColumnHandCount * 450 + 900;
+      int optimisticGridHandCount = std::min(maxGridHandCount, 4 + maxColumnHandCount + 1);
+      int optimisticTotal = score_from_parts(optimisticGridBase, optimisticGridHandCount, discardBonus).total;
       if (optimisticTotal <= best.total) return;
     }
 
@@ -565,7 +567,10 @@ struct Solver {
     }
   }
 
-  std::vector<Mask> four_card_submasks(Mask mask) {
+  const std::vector<Mask>& four_card_submasks(Mask mask) {
+    auto cached = submask4Cache.find(mask);
+    if (cached != submask4Cache.end()) return cached->second;
+
     auto indexes = indexes_from_mask(mask);
     std::vector<Mask> result;
     for (size_t a = 0; a + 3 < indexes.size(); ++a) {
@@ -578,7 +583,8 @@ struct Solver {
         }
       }
     }
-    return result;
+    auto [inserted, _] = submask4Cache.emplace(mask, std::move(result));
+    return inserted->second;
   }
 
   void finish_row_partition(int rowValue, int rowHandCount, int discardBonus, Mask discard) {
@@ -609,12 +615,12 @@ struct Solver {
       return;
     }
 
-    auto candidates = row_candidates(remaining);
+    const auto& candidates = row_candidates(remaining);
     int optimistic = optimistic_row_value(candidates, remaining, 3 - depth);
     if (optimistic < 0) return;
     if (skipRowsRemaining == 0) {
-      int optimisticGridBase = rowValue + optimistic + 1800 + 900;
-      int optimisticGridHandCount = std::min(maxGridHandCount, 3 + 4 + 1);
+      int optimisticGridBase = rowValue + optimistic + maxColumnHandCount * 450 + 900;
+      int optimisticGridHandCount = std::min(maxGridHandCount, 3 + maxColumnHandCount + 1);
       if (score_from_parts(optimisticGridBase, optimisticGridHandCount, discardBonus).total <= best.total) return;
     }
 
@@ -669,6 +675,8 @@ struct Solver {
   void initialize(const std::vector<std::string>& inputCards, int incumbent = 0) {
     cards = inputCards;
     best.total = incumbent;
+    rowCandidateCache.reserve(200000);
+    submask4Cache.reserve(200000);
     for (int a = 0; a < 17; ++a) {
       for (int b = a + 1; b < 18; ++b) {
         for (int c = b + 1; c < 19; ++c) {

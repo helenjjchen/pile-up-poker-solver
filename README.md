@@ -6,7 +6,7 @@ Current build:
 
 - Fantasyland card picker for the 36-card deck.
 - Exact hand and placement scoring.
-- Fantasyland optimizer with symmetry-deduped solution results, a fast heuristic incumbent, resumable native exact passes for all proof buckets, and JS fallback passes.
+- Fantasyland optimizer with symmetry-deduped solution results, a fast heuristic incumbent, resumable native exact passes for all proof buckets, and Web Worker JS fallback passes.
 - The UI reports "Best Possible" only when a saved/offline proof or the browser exact pass certifies the optimum; otherwise it reports "Best Found".
 - Score breakdown for rows, columns, corners, and discard.
 - Best-known result tracking per canonical/equivalent 20-card deal family, seeded from `data/best-known-fantasyland.json` and updated in browser local storage when a run finds a better placement.
@@ -44,7 +44,9 @@ This repo is set up for GitHub Pages with `.github/workflows/pages.yml`. After p
 3. Set Source to "GitHub Actions".
 4. Push to `main` or run the "Deploy GitHub Pages" workflow manually.
 
-The deployed Pages app is static. It can read committed data from `data/*.json` and save browser-local results in the visitor's localStorage. It cannot call the local C++ exact solver API or write new best-known placements back to the repo. For file-backed local persistence, run `pnpm dev` and use `http://127.0.0.1:5173/`.
+The deployed Pages app is static. It can read committed data from `data/*.json`, save browser-local results in the visitor's localStorage, and run the browser exact fallback inside a module Web Worker so the UI stays responsive during proof chunks. It cannot call the local C++ exact solver API or write new best-known placements back to the repo. For file-backed local persistence and native C++ chunks, run `pnpm dev` and use `http://127.0.0.1:5173/`.
+
+The worker also supports an optional WASM exact backend. If `src/wasm/exactSolver.mjs` exists and exports `createExactSolver()`, the worker will try it before the JS fallback. See `src/wasm/README.md` for the expected module shape.
 
 ## Exact Solver Experiment
 
@@ -75,7 +77,7 @@ Why `$3,225`: 9-or-fewer hands cannot beat `$27,420`, and a 10-hand placement ca
 
 ## Notes
 
-The UI optimizer is an anytime search plus native exact chunks when served by `server.mjs`. The scorer is exact. For the screenshot sample, `$14,880` is not optimal; `$15,270` is certified optimal for that sample deal by the offline high-bucket proof.
+The UI optimizer is an anytime search plus native exact chunks when served by `server.mjs`, with a Web Worker JS exact fallback for static hosts. The scorer is exact. For the screenshot sample, `$14,880` is not optimal; `$15,270` is certified optimal for that sample deal by the offline high-bucket proof.
 
 For maximization, the saved "best known" score is a lower bound on the true optimum. Browser-local records are stored by canonical deal key, so equivalent deals can reuse the strongest known lower bound with the placement translated onto the selected cards. All native proof passes store safe resume progress by canonical deal key. Progress is tracked by fully checked discard candidates plus completed row partitions inside the current discard candidate, so timed-out chunks can resume within a long-running discard instead of restarting it. The exact passes cover the full proof space in phases: 8/9/10 hands, then 3+/4-row low buckets, then 0/1/2-row low buckets. The app still labels a result "Best Found" whenever those proof phases time out, so users can continue running chunks until the deal is certified.
 

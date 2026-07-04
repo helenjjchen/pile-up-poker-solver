@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { canonicalDealKey, translatePlacementToDeal } from "../src/cards.js";
 import { solveFantasylandExactHighBuckets } from "../src/exactHighBucketSolver.js";
 import { scoreHand, scorePlacement, theoreticalMaxTotalForHandCount } from "../src/scoring.js";
+import { BOARD_TRANSFORMS, canonicalPlacementKey } from "../src/symmetry.js";
 
 function assertHand(cards, key, base, quality) {
   const hand = scoreHand(cards);
@@ -43,6 +44,17 @@ assert.equal(screenshotScore.base, 2480);
 assert.equal(screenshotScore.handCount, 10);
 assert.equal(screenshotScore.multiplier, 6);
 assert.equal(screenshotScore.total, 14880);
+assert.equal(BOARD_TRANSFORMS.length, 32);
+
+const interiorRowSwapGrid = [...screenshotGrid];
+for (let col = 0; col < 4; col += 1) {
+  [interiorRowSwapGrid[4 + col], interiorRowSwapGrid[8 + col]] = [
+    interiorRowSwapGrid[8 + col],
+    interiorRowSwapGrid[4 + col],
+  ];
+}
+assert.equal(canonicalPlacementKey(screenshotGrid, screenshotDiscard), canonicalPlacementKey(interiorRowSwapGrid, screenshotDiscard));
+assert.equal(scorePlacement(interiorRowSwapGrid, screenshotDiscard).total, screenshotScore.total);
 
 const shiftedLowRun = [
   "6H",
