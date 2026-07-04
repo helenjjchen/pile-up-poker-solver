@@ -1480,6 +1480,104 @@ function activeSolution() {
   return latestResult?.solutions?.[activeSolutionIndex] ?? latestResult?.best ?? null;
 }
 
+function solutionStructureKey(solution) {
+  const score = solution.score;
+  const lineParts = score.lines.map((line) =>
+    [line.key, line.scores ? 1 : 0, line.hand.key, line.value].join(":"),
+  );
+  return [
+    score.total,
+    score.base,
+    score.handCount,
+    score.multiplier,
+    score.qualityHandCount,
+    ...lineParts,
+    "discard",
+    score.discardScores ? 1 : 0,
+    score.discardHand.key,
+    score.discardValue,
+  ].join("|");
+}
+
+function groupedSolutions() {
+  const groups = [];
+  const byKey = new Map();
+
+  (latestResult?.solutions ?? []).forEach((solution, index) => {
+    const key = solutionStructureKey(solution);
+    let group = byKey.get(key);
+    if (!group) {
+      group = {
+        key,
+        representative: solution,
+        indexes: [],
+        solutions: [],
+      };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    group.indexes.push(index);
+    group.solutions.push(solution);
+  });
+
+  return groups;
+}
+
+function renderSolutionGroups() {
+  const groups = groupedSolutions().slice(0, 12);
+  solutionsRow.innerHTML = "";
+
+  groups.forEach((group) => {
+    const activeInGroup = group.indexes.includes(activeSolutionIndex);
+    const groupElement = document.createElement("div");
+    groupElement.className = `solution-group${activeInGroup ? " is-active" : ""}`;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "solution-pill";
+    button.title =
+      group.solutions.length === 1
+        ? "Show this placement"
+        : "Show the first placement in this score-equivalent group";
+    button.innerHTML = `${money(group.representative.score.total)}<span>${group.representative.score.handCount} hands · ${group.representative.score.qualityHandCount} quality · ${group.solutions.length} ${group.solutions.length === 1 ? "placement" : "variants"}</span>`;
+    button.addEventListener("click", () => {
+      activeSolutionIndex = group.indexes[0];
+      renderResult();
+    });
+    groupElement.append(button);
+
+    if (group.solutions.length > 1) {
+      const details = document.createElement("details");
+      details.className = "variant-details";
+      if (activeInGroup) details.open = true;
+
+      const summary = document.createElement("summary");
+      summary.textContent = `${group.solutions.length} variants`;
+      summary.title = "Placements with the same visible score breakdown";
+      details.append(summary);
+
+      const variantList = document.createElement("div");
+      variantList.className = "variant-list";
+      group.solutions.forEach((solution, variantIndex) => {
+        const solutionIndex = group.indexes[variantIndex];
+        const variantButton = document.createElement("button");
+        variantButton.type = "button";
+        variantButton.className = `variant-button${solutionIndex === activeSolutionIndex ? " is-active" : ""}`;
+        variantButton.innerHTML = `Variant ${variantIndex + 1}<span>${solution.source ?? "placement"}</span>`;
+        variantButton.addEventListener("click", () => {
+          activeSolutionIndex = solutionIndex;
+          renderResult();
+        });
+        variantList.append(variantButton);
+      });
+      details.append(variantList);
+      groupElement.append(details);
+    }
+
+    solutionsRow.append(groupElement);
+  });
+}
+
 function renderResult() {
   const solution = activeSolution();
   if (!solution) {
@@ -1507,18 +1605,7 @@ function renderResult() {
   discardCards.innerHTML = solution.discard.map((cardId) => renderPlayingCard(cardId)).join("");
   renderBoardAnnotations(score);
 
-  solutionsRow.innerHTML = "";
-  latestResult.solutions.slice(0, 12).forEach((item, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `solution-pill${index === activeSolutionIndex ? " is-active" : ""}`;
-    button.innerHTML = `${money(item.score.total)}<span>${item.score.handCount} hands · ${item.score.qualityHandCount} quality</span>`;
-    button.addEventListener("click", () => {
-      activeSolutionIndex = index;
-      renderResult();
-    });
-    solutionsRow.append(button);
-  });
+  renderSolutionGroups();
 
   bucketList.innerHTML = latestResult.bestByHandCount
     .map((bucket) => {

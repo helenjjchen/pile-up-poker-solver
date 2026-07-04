@@ -587,8 +587,9 @@ h2 {
 
 .solutions-row {
   display: flex;
-  gap: 8px;
-  min-height: 46px;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 58px;
   margin: 8px 0 18px;
   overflow-x: auto;
   padding-bottom: 4px;
@@ -603,8 +604,8 @@ h2 {
 }
 
 .solution-pill {
-  flex: 0 0 auto;
-  min-width: 116px;
+  width: 100%;
+  min-width: 0;
   min-height: 42px;
   padding: 7px 10px;
   border: 1px solid var(--line);
@@ -613,7 +614,13 @@ h2 {
   font-weight: 850;
 }
 
-.solution-pill.is-active {
+.solution-group {
+  flex: 0 0 172px;
+  display: grid;
+  gap: 6px;
+}
+
+.solution-group.is-active .solution-pill {
   border-color: var(--yellow);
   background: #fff7db;
 }
@@ -622,6 +629,51 @@ h2 {
   display: block;
   color: var(--muted);
   font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.variant-details {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfa;
+}
+
+.variant-details summary {
+  min-height: 30px;
+  padding: 7px 9px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.variant-list {
+  display: grid;
+  gap: 5px;
+  padding: 0 6px 6px;
+}
+
+.variant-button {
+  min-height: 34px;
+  padding: 6px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-align: left;
+}
+
+.variant-button.is-active {
+  border-color: var(--yellow);
+  background: #fff7db;
+}
+
+.variant-button span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.66rem;
   font-weight: 800;
 }
 
