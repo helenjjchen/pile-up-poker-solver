@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pile-Up Poker Solver</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Fantasyland V0</p>
+          <h1>Pile-Up Poker Solver</h1>
+        </div>
+        <div class="topbar-score" id="topScore">$0</div>
+      </header>
+
+      <section class="workspace">
+        <aside class="picker-panel" aria-label="Card picker">
+          <div class="panel-heading">
+            <h2>Cards</h2>
+            <span id="selectedCount">0/20</span>
+          </div>
+          <div class="deck-grid" id="deckGrid"></div>
+          <div class="control-row">
+            <button type="button" class="secondary-button" id="loadSampleButton">Load Sample</button>
+            <button type="button" class="secondary-button" id="clearButton">Clear</button>
+          </div>
+          <div class="optimizer-controls">
+            <label for="searchDepth">Search</label>
+            <select id="searchDepth">
+              <option value="3000">Quick · 3s</option>
+              <option value="10000">Balanced · 10s</option>
+              <option value="20000" selected>Deep · 20s</option>
+            </select>
+            <button type="button" class="primary-button" id="optimizeButton">Optimize</button>
+          </div>
+          <p class="status-line" id="statusLine">Select 20 cards.</p>
+          <div class="optimizer-timer is-hidden" id="optimizerTimer" aria-live="polite">
+            <span class="timer-spinner" aria-hidden="true"></span>
+            <strong id="optimizerTimerText">Idle</strong>
+          </div>
+        </aside>
+
+        <section class="result-panel" aria-label="Optimizer result">
+          <div class="score-strip">
+            <div>
+              <span id="resultModeLabel">Best Found</span>
+              <strong id="resultTotal">$0</strong>
+            </div>
+            <div>
+              <span>Before Multiplier</span>
+              <strong id="resultBase">$0</strong>
+            </div>
+            <div>
+              <span>Hands</span>
+              <strong id="resultHands">0</strong>
+            </div>
+            <div>
+              <span>Multiplier</span>
+              <strong id="resultMultiplier">x1</strong>
+            </div>
+            <div>
+              <span>Quality</span>
+              <strong id="resultQuality">0</strong>
+            </div>
+          </div>
+
+          <details class="diagnostics-panel">
+            <summary>Solver Diagnostics</summary>
+            <div class="diagnostics-content">
+              <div class="best-known-panel" id="bestKnownPanel">
+                <div>
+                  <span>Best Known For This Deal</span>
+                  <strong id="bestKnownSummary">No saved result</strong>
+                </div>
+                <button type="button" class="secondary-button" id="showBestKnownButton" disabled>
+                  Show Saved Placement
+                </button>
+              </div>
+
+              <div class="proof-panel" id="proofPanel">
+                <span>Exact Proof Status</span>
+                <strong id="proofSummary">No proof run for this deal yet</strong>
+              </div>
+            </div>
+          </details>
+
+          <div class="board-area">
+            <div class="discard-stack">
+              <div class="area-label">Discard</div>
+              <div class="discard-cards" id="discardCards"></div>
+            </div>
+            <div class="board-grid" id="boardGrid"></div>
+          </div>
+
+          <div class="solutions-row" id="solutionsRow"></div>
+
+          <div class="bucket-panel">
+            <div class="panel-heading">
+              <h2>Best By Hand Count</h2>
+              <span>10 → 0</span>
+            </div>
+            <div class="bucket-list" id="bucketList"></div>
+          </div>
+
+          <div class="breakdown-panel">
+            <div class="panel-heading">
+              <h2>Breakdown</h2>
+              <span id="runtimeInfo">Not run</span>
+            </div>
+            <div class="breakdown-list" id="breakdownList"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="./src/app.js?v=exact-cache-4"></script>
+  </body>
+</html>

@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "updatedAt": "2026-07-03T23:52:39.629Z",
+  "records": [
+    {
+      "id": "rshift:0a 0b 0c 1a 1b 2a 2c 2d 3c 3d 4a 4b 5a 5b 5c 5d 6a 6d 7d 8c-12300",
+      "dealKey": "6H 6S 6C 7H 7C 8S 8C 8D 9S 9D 10H 10C JH JS JC JD QC QD KD AS",
+      "canonicalDealKey": "rshift:0a 0b 0c 1a 1b 2a 2c 2d 3c 3d 4a 4b 5a 5b 5c 5d 6a 6d 7d 8c",
+      "deal": [
+        "6H",
+        "6S",
+        "6C",
+        "7H",
+        "7C",
+        "8S",
+        "8C",
+        "8D",
+        "9S",
+        "9D",
+        "10H",
+        "10C",
+        "JH",
+        "JS",
+        "JC",
+        "JD",
+        "QC",
+        "QD",
+        "KD",
+        "AS"
+      ],
+      "grid": [
+        "7H",
+        "6C",
+        "8C",
+        "9S",
+        "9D",
+        "6H",
+        "7C",
+        "8S",
+        "10H",
+        "KD",
+        "10C",
+        "AS",
+        "8D",
+        "QD",
+        "QC",
+        "6S"
+      ],
+      "discard": [
+        "JC",
+        "JH",
+        "JS",
+        "JD"
+      ],
+      "score": {
+        "total": 12300,
+        "beforeMultiplier": 2050,
+        "hands": 10,
+        "multiplier": 6,
+        "qualityHands": 5
+      },
+      "source": "native exact high-bucket",
+      "foundAt": "2026-07-03T17:38:01.718Z",
+      "notes": "Best known placement found in this browser session. Not certified optimal."
+    }
+  ]
+}

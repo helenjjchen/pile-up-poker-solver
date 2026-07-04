@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-02T02:49:20.882367+00:00",
+  "records": [
+    {
+      "dealKey": "6H 6C 7H 7S 7C 9H 9S 10S JH JS JC QH QS QC QD KH KS KD AS AD",
+      "deal": [
+        "6H",
+        "6C",
+        "7H",
+        "7S",
+        "7C",
+        "9H",
+        "9S",
+        "10S",
+        "JH",
+        "JS",
+        "JC",
+        "QH",
+        "QS",
+        "QC",
+        "QD",
+        "KH",
+        "KS",
+        "KD",
+        "AS",
+        "AD"
+      ],
+      "bestKnownTotal": 15270,
+      "incumbentTotal": 15270,
+      "status": "proven",
+      "scope": "8-or-more-hand buckets",
+      "totalCandidateDiscards": 4845,
+      "totalPositiveDiscards": 2570,
+      "completedDiscards": 4845,
+      "contiguousCompletedDiscards": 4845,
+      "completedRanges": [
+        [
+          0,
+          4844
+        ]
+      ],
+      "timedOutStarts": [],
+      "exhausted10HandBucket": false,
+      "exhaustedSearchBucket": true,
+      "logEntries": 4846,
+      "logPath": "data/exact-high-runs.jsonl",
+      "notes": "This covers every 8-, 9-, and 10-hand placement. Seven or fewer hands cannot beat the incumbent because their theoretical maximum is 14400."
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "records": [
+    {
+      "id": "sample-2026-07-01-best-found-15270",
+      "dealKey": "6H 6C 7H 7S 7C 9H 9S 10S JH JS JC QH QS QC QD KH KS KD AS AD",
+      "canonicalDealKey": "rshift:0a 0b 1a 1b 1c 3a 3c 4c 5a 5b 5c 6a 6b 6c 6d 7a 7c 7d 8c 8d",
+      "deal": [
+        "6H",
+        "6C",
+        "7H",
+        "7S",
+        "7C",
+        "9H",
+        "9S",
+        "10S",
+        "JH",
+        "JS",
+        "JC",
+        "QH",
+        "QS",
+        "QC",
+        "QD",
+        "KH",
+        "KS",
+        "KD",
+        "AS",
+        "AD"
+      ],
+      "grid": [
+        "10S",
+        "QD",
+        "KD",
+        "JH",
+        "JC",
+        "6C",
+        "7C",
+        "QC",
+        "9S",
+        "9H",
+        "7S",
+        "AD",
+        "QH",
+        "6H",
+        "7H",
+        "KH"
+      ],
+      "discard": [
+        "JS",
+        "QS",
+        "KS",
+        "AS"
+      ],
+      "score": {
+        "total": 15270,
+        "beforeMultiplier": 2545,
+        "hands": 10,
+        "multiplier": 6,
+        "qualityHands": 6
+      },
+      "source": "repo-seeded",
+      "foundAt": "2026-07-01",
+      "notes": "Certified optimal sample-deal placement. The high-bucket proof exhausts every 8-, 9-, and 10-hand placement; 7-or-fewer hands are bounded below this score."
+    }
+  ]
+}
