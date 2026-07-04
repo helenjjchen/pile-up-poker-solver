@@ -37,6 +37,28 @@ struct Best {
   std::array<int, 2> cornerCols{};
 };
 
+struct ScoreParts {
+  int total = 0;
+  int base = 0;
+  int handCount = 0;
+};
+
+int multiplier_for_hand_count(int handCount) {
+  if (handCount >= 10) return 6;
+  if (handCount >= 8) return 5;
+  if (handCount >= 6) return 4;
+  if (handCount >= 4) return 3;
+  if (handCount >= 2) return 2;
+  return 1;
+}
+
+ScoreParts score_from_parts(int gridBase, int gridHandCount, int discardBonus) {
+  bool discardScores = gridHandCount == 9 && discardBonus > 0;
+  int handCount = gridHandCount + (discardScores ? 1 : 0);
+  int base = gridBase + (discardScores ? discardBonus : 0);
+  return {base * multiplier_for_hand_count(handCount), base, handCount};
+}
+
 static const std::vector<std::string> SAMPLE = {
     "9S", "QC", "JH", "10S", "JC", "AD", "KD", "QD", "QH", "6H",
     "KH", "9H", "QS", "AS",  "KS", "JS", "7H", "7S", "7C", "6C"};
@@ -153,6 +175,9 @@ struct Solver {
   uint64_t skipRowsRemaining = 0;
   uint64_t maxRows = 0;
   bool highBuckets = false;
+  bool threePlusLow = false;
+  int minGridHandCount = 0;
+  int maxGridHandCount = 9;
 
   bool over_time() {
     if (secondsLimit <= 0) return false;
@@ -209,6 +234,38 @@ struct Solver {
         }
       }
     }
+    return bestCorner;
+  }
+
+  std::optional<int> best_corner_for_cells(const std::array<std::array<Mask, 4>, 4>& cells, bool allowScoringCorner,
+                                           std::array<int, 2>& outRows, std::array<int, 2>& outCols,
+                                           Mask& outCorner) {
+    int bestCorner = 0;
+    bool found = false;
+    for (int r1 = 0; r1 < 3; ++r1) {
+      for (int r2 = r1 + 1; r2 < 4; ++r2) {
+        for (int c1 = 0; c1 < 3; ++c1) {
+          for (int c2 = c1 + 1; c2 < 4; ++c2) {
+            Mask corner = cells[r1][c1] | cells[r1][c2] | cells[r2][c1] | cells[r2][c2];
+            int cornerValue = value[corner];
+            if (!allowScoringCorner && cornerValue == 0) {
+              outRows = {r1, r2};
+              outCols = {c1, c2};
+              outCorner = corner;
+              return 0;
+            }
+            if (allowScoringCorner && (!found || cornerValue > bestCorner)) {
+              found = true;
+              bestCorner = cornerValue;
+              outRows = {r1, r2};
+              outCols = {c1, c2};
+              outCorner = corner;
+            }
+          }
+        }
+      }
+    }
+    if (!allowScoringCorner) return std::nullopt;
     return bestCorner;
   }
 
@@ -348,6 +405,97 @@ struct Solver {
     }
   }
 
+  void evaluate_columns_generic(int rowValue, int rowHandCount, int discardBonus, Mask discard) {
+    static const std::array<std::array<int, 4>, 24> perms = [] {
+      std::array<std::array<int, 4>, 24> out{};
+      std::array<int, 4> p = {0, 1, 2, 3};
+      int index = 0;
+      do {
+        out[index++] = p;
+      } while (std::next_permutation(p.begin(), p.end()));
+      return out;
+    }();
+
+    std::array<std::array<Mask, 4>, 4> rowCellBits{};
+    for (int row = 0; row < 4; ++row) rowCellBits[row] = rowBits(rowMasks[row]);
+
+    int cornerUpper = corner_upper_bound_for_rows();
+    int optimisticColumns = 0;
+    for (int c0 = 0; c0 < 4; ++c0) {
+      int bestForColumn = 0;
+      for (int c1 = 0; c1 < 4; ++c1)
+        for (int c2 = 0; c2 < 4; ++c2)
+          for (int c3 = 0; c3 < 4; ++c3) {
+            Mask col = rowCellBits[0][c0] | rowCellBits[1][c1] | rowCellBits[2][c2] | rowCellBits[3][c3];
+            bestForColumn = std::max(bestForColumn, value[col]);
+          }
+      optimisticColumns += bestForColumn;
+    }
+
+    int optimisticGridHandCount = std::min(maxGridHandCount, rowHandCount + 4 + (cornerUpper > 0 ? 1 : 0));
+    if (optimisticGridHandCount < minGridHandCount) return;
+    int optimisticGridBase = rowValue + optimisticColumns + cornerUpper * 2;
+    if (score_from_parts(optimisticGridBase, optimisticGridHandCount, discardBonus).total <= best.total) return;
+
+    for (const auto& p1 : perms) {
+      if (over_time()) return;
+      for (const auto& p2 : perms) {
+        for (const auto& p3 : perms) {
+          std::array<std::array<Mask, 4>, 4> cells{};
+          cells[0] = rowCellBits[0];
+          for (int col = 0; col < 4; ++col) {
+            cells[1][col] = rowCellBits[1][p1[col]];
+            cells[2][col] = rowCellBits[2][p2[col]];
+            cells[3][col] = rowCellBits[3][p3[col]];
+          }
+
+          int colValue = 0;
+          int columnHandCount = 0;
+          for (int col = 0; col < 4; ++col) {
+            Mask colMask = cells[0][col] | cells[1][col] | cells[2][col] | cells[3][col];
+            colMasks[col] = colMask;
+            int colScore = value[colMask];
+            if (colScore > 0) columnHandCount++;
+            colValue += colScore;
+          }
+
+          int baseGridHandCount = rowHandCount + columnHandCount;
+          if (baseGridHandCount > maxGridHandCount) continue;
+          int candidateCornerUpper = baseGridHandCount < maxGridHandCount ? cornerUpper : 0;
+          int upperGridHandCount = baseGridHandCount + (candidateCornerUpper > 0 ? 1 : 0);
+          if (upperGridHandCount < minGridHandCount) continue;
+          columnPartitions++;
+          ScoreParts upper = score_from_parts(rowValue + colValue + candidateCornerUpper * 2, upperGridHandCount, discardBonus);
+          if (upper.total <= best.total) continue;
+
+          std::array<int, 2> cornerRows{};
+          std::array<int, 2> cornerCols{};
+          Mask corner = 0;
+          auto cornerValue = best_corner_for_cells(cells, baseGridHandCount < maxGridHandCount, cornerRows, cornerCols, corner);
+          if (!cornerValue.has_value()) continue;
+
+          int gridHandCount = baseGridHandCount + (cornerValue.value() > 0 ? 1 : 0);
+          if (gridHandCount < minGridHandCount || gridHandCount > maxGridHandCount) continue;
+          int gridBase = rowValue + colValue + cornerValue.value() * 2;
+          ScoreParts score = score_from_parts(gridBase, gridHandCount, discardBonus);
+          if (score.total > best.total) {
+            best.total = score.total;
+            best.base = score.base;
+            best.handCount = score.handCount;
+            best.gridHandCount = gridHandCount;
+            best.hasPlacement = true;
+            best.discard = discard;
+            best.rows = rowMasks;
+            best.cols = colMasks;
+            best.corner = corner;
+            best.cornerRows = cornerRows;
+            best.cornerCols = cornerCols;
+          }
+        }
+      }
+    }
+  }
+
   int optimistic_row_value(const std::vector<Mask>& candidates, Mask remaining, int needed) {
     int total = 0;
     int count = 0;
@@ -374,7 +522,11 @@ struct Solver {
         rowLimitHit = true;
         return;
       }
-      evaluate_columns_by_permutation(rowValue, discardBonus, discard);
+      if (threePlusLow) {
+        evaluate_columns_generic(rowValue, 4, discardBonus, discard);
+      } else {
+        evaluate_columns_by_permutation(rowValue, discardBonus, discard);
+      }
       if (!timedOut) {
         rowPartitions++;
         rowPartitionsCompleted++;
@@ -387,10 +539,17 @@ struct Solver {
     int optimistic = optimistic_row_value(candidates, remaining, 4 - depth);
     if (optimistic < 0) return;
     if (skipRowsRemaining == 0) {
-      int optimisticGridBase = rowValue + optimistic + 3600 + 900;
-      int optimisticTotal = highBuckets ? optimisticGridBase * 5 : (optimisticGridBase + discardBonus) * 6;
-      if (highBuckets && discardBonus > 0) {
-        optimisticTotal = std::max(optimisticTotal, (optimisticGridBase + discardBonus) * 6);
+      int optimisticTotal = 0;
+      if (threePlusLow) {
+        int optimisticGridBase = rowValue + optimistic + 3600 + 900;
+        int optimisticGridHandCount = std::min(maxGridHandCount, 4 + 4 + 1);
+        optimisticTotal = score_from_parts(optimisticGridBase, optimisticGridHandCount, discardBonus).total;
+      } else {
+        int optimisticGridBase = rowValue + optimistic + 3600 + 900;
+        optimisticTotal = highBuckets ? optimisticGridBase * 5 : (optimisticGridBase + discardBonus) * 6;
+        if (highBuckets && discardBonus > 0) {
+          optimisticTotal = std::max(optimisticTotal, (optimisticGridBase + discardBonus) * 6);
+        }
       }
       if (optimisticTotal <= best.total) return;
     }
@@ -399,6 +558,76 @@ struct Solver {
       rowMasks[depth] = candidate;
       search_rows(board, remaining ^ candidate, depth + 1, rowValue + value[candidate], discardBonus, discard);
       if (timedOut || rowLimitHit) return;
+    }
+  }
+
+  std::vector<Mask> four_card_submasks(Mask mask) {
+    auto indexes = indexes_from_mask(mask);
+    std::vector<Mask> result;
+    for (size_t a = 0; a + 3 < indexes.size(); ++a) {
+      for (size_t b = a + 1; b + 2 < indexes.size(); ++b) {
+        for (size_t c = b + 1; c + 1 < indexes.size(); ++c) {
+          for (size_t d = c + 1; d < indexes.size(); ++d) {
+            result.push_back((Mask(1) << indexes[a]) | (Mask(1) << indexes[b]) | (Mask(1) << indexes[c]) |
+                             (Mask(1) << indexes[d]));
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  void finish_row_partition(int rowValue, int rowHandCount, int discardBonus, Mask discard) {
+    if (skipRowsRemaining > 0) {
+      skipRowsRemaining--;
+      rowPartitionsSkipped++;
+      return;
+    }
+    if (maxRows > 0 && rowPartitionsCompleted >= maxRows) {
+      rowLimitHit = true;
+      return;
+    }
+    evaluate_columns_generic(rowValue, rowHandCount, discardBonus, discard);
+    if (!timedOut) {
+      rowPartitions++;
+      rowPartitionsCompleted++;
+      currentDiscardRowsCompleted++;
+    }
+  }
+
+  void search_three_positive_rows(Mask remaining, int depth, int rowValue, int discardBonus, Mask discard,
+                                  Mask deadRowMask) {
+    if (over_time() || rowLimitHit) return;
+    if (depth == 3) {
+      if (remaining != 0) return;
+      rowMasks[3] = deadRowMask;
+      finish_row_partition(rowValue, 3, discardBonus, discard);
+      return;
+    }
+
+    auto candidates = row_candidates(remaining);
+    int optimistic = optimistic_row_value(candidates, remaining, 3 - depth);
+    if (optimistic < 0) return;
+    if (skipRowsRemaining == 0) {
+      int optimisticGridBase = rowValue + optimistic + 1800 + 900;
+      int optimisticGridHandCount = std::min(maxGridHandCount, 3 + 4 + 1);
+      if (score_from_parts(optimisticGridBase, optimisticGridHandCount, discardBonus).total <= best.total) return;
+    }
+
+    for (Mask candidate : candidates) {
+      rowMasks[depth] = candidate;
+      search_three_positive_rows(remaining ^ candidate, depth + 1, rowValue + value[candidate], discardBonus, discard,
+                                 deadRowMask);
+      if (timedOut || rowLimitHit) return;
+    }
+  }
+
+  void search_one_dead_row(Mask board, int discardBonus, Mask discard) {
+    for (Mask deadRowMask : four_card_submasks(board)) {
+      if (timedOut || rowLimitHit || over_time()) return;
+      if (value[deadRowMask] > 0) continue;
+      Mask remaining = board ^ deadRowMask;
+      search_three_positive_rows(remaining, 0, 0, discardBonus, discard, deadRowMask);
     }
   }
 
@@ -429,8 +658,11 @@ struct Solver {
   }
 
   void solve(double seconds, int incumbent, int discardLimit, int skipDiscardCount, uint64_t skipRowCount,
-             uint64_t rowLimit, bool includeHighBuckets) {
+             uint64_t rowLimit, bool includeHighBuckets, bool includeThreePlusLow) {
     highBuckets = includeHighBuckets;
+    threePlusLow = includeThreePlusLow;
+    minGridHandCount = 0;
+    maxGridHandCount = threePlusLow ? 7 : 9;
     secondsLimit = seconds;
     maxDiscards = discardLimit;
     skipDiscards = skipDiscardCount;
@@ -440,7 +672,7 @@ struct Solver {
     started = std::chrono::steady_clock::now();
     Mask all = (Mask(1) << 20) - 1;
     int seenDiscards = 0;
-    const auto& discardCandidates = highBuckets ? allDiscards : positives;
+    const auto& discardCandidates = (highBuckets || threePlusLow) ? allDiscards : positives;
     for (const auto& discardCandidate : discardCandidates) {
       if (over_time()) break;
       if (seenDiscards++ < skipDiscards) continue;
@@ -452,16 +684,25 @@ struct Solver {
       Mask board = all ^ discardCandidate.mask;
       int discardBonus = discardCandidate.value * 3;
       currentDiscardRowsCompleted = 0;
-      int absoluteGridUpper = 450 * 8 + 900;
-      int absoluteTotalUpper = highBuckets ? absoluteGridUpper * 5 : (absoluteGridUpper + discardBonus) * 6;
-      if (highBuckets && discardBonus > 0) {
-        absoluteTotalUpper = std::max(absoluteTotalUpper, (absoluteGridUpper + discardBonus) * 6);
+      int absoluteGridUpper = threePlusLow ? (450 * 6 + 900) : (450 * 8 + 900);
+      int absoluteGridHandCount = threePlusLow ? 7 : 9;
+      int absoluteTotalUpper = 0;
+      if (threePlusLow) {
+        absoluteTotalUpper = score_from_parts(absoluteGridUpper, absoluteGridHandCount, discardBonus).total;
+      } else {
+        absoluteTotalUpper = highBuckets ? absoluteGridUpper * 5 : (absoluteGridUpper + discardBonus) * 6;
+        if (highBuckets && discardBonus > 0) {
+          absoluteTotalUpper = std::max(absoluteTotalUpper, (absoluteGridUpper + discardBonus) * 6);
+        }
       }
-      if (absoluteTotalUpper <= best.total) {
+      if (skipRowsRemaining == 0 && absoluteTotalUpper <= best.total) {
         fullyCheckedDiscards++;
         continue;
       }
       search_rows(board, board, 0, 0, discardBonus, discardCandidate.mask);
+      if (!timedOut && !rowLimitHit && threePlusLow) {
+        search_one_dead_row(board, discardBonus, discardCandidate.mask);
+      }
       if (timedOut || rowLimitHit) {
         openDiscardRowsCompleted = currentDiscardRowsCompleted;
         break;
@@ -508,7 +749,7 @@ struct Solver {
 
 std::vector<std::string> parse_cards(int argc, char** argv, bool& sample, double& seconds, int& incumbent,
                                      int& discardLimit, int& skipDiscards, uint64_t& skipRows, uint64_t& rowLimit,
-                                     bool& highBuckets) {
+                                     bool& highBuckets, bool& threePlusLow) {
   std::vector<std::string> cards;
   sample = false;
   seconds = 0;
@@ -518,6 +759,7 @@ std::vector<std::string> parse_cards(int argc, char** argv, bool& sample, double
   skipRows = 0;
   rowLimit = 0;
   highBuckets = false;
+  threePlusLow = false;
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "--sample") {
@@ -536,6 +778,8 @@ std::vector<std::string> parse_cards(int argc, char** argv, bool& sample, double
       rowLimit = std::strtoull(argv[++i], nullptr, 10);
     } else if (arg == "--high-buckets") {
       highBuckets = true;
+    } else if (arg == "--three-plus-low") {
+      threePlusLow = true;
     } else {
       cards.push_back(arg);
     }
@@ -553,8 +797,9 @@ int main(int argc, char** argv) {
   uint64_t skipRows = 0;
   uint64_t rowLimit = 0;
   bool highBuckets = false;
+  bool threePlusLow = false;
   auto cards = parse_cards(argc, argv, sample, seconds, incumbent, discardLimit, skipDiscards, skipRows, rowLimit,
-                           highBuckets);
+                           highBuckets, threePlusLow);
   if (cards.size() != 20) {
     std::cerr << "Provide 20 cards or --sample\n";
     return 2;
@@ -562,10 +807,10 @@ int main(int argc, char** argv) {
 
   Solver solver;
   solver.initialize(cards, incumbent);
-  solver.solve(seconds, incumbent, discardLimit, skipDiscards, skipRows, rowLimit, highBuckets);
+  solver.solve(seconds, incumbent, discardLimit, skipDiscards, skipRows, rowLimit, highBuckets, threePlusLow);
 
   std::cout << "{\n";
-  std::cout << "  \"mode\": \"" << (highBuckets ? "high-buckets" : "10-hand") << "\",\n";
+  std::cout << "  \"mode\": \"" << (threePlusLow ? "three-plus-low" : (highBuckets ? "high-buckets" : "10-hand")) << "\",\n";
   std::cout << "  \"bestTotal\": " << solver.best.total << ",\n";
   std::cout << "  \"bestBase\": " << solver.best.base << ",\n";
   std::cout << "  \"bestHandCount\": " << solver.best.handCount << ",\n";
@@ -584,7 +829,8 @@ int main(int argc, char** argv) {
   std::cout << "  \"rowPartitionsCompleted\": " << solver.rowPartitionsCompleted << ",\n";
   std::cout << "  \"openDiscardRowsCompleted\": " << solver.openDiscardRowsCompleted << ",\n";
   std::cout << "  \"rowLimitHit\": " << (solver.rowLimitHit ? "true" : "false") << ",\n";
-  std::cout << "  \"candidateDiscards\": " << (highBuckets ? solver.allDiscards.size() : solver.positives.size()) << ",\n";
+  std::cout << "  \"candidateDiscards\": "
+            << ((highBuckets || threePlusLow) ? solver.allDiscards.size() : solver.positives.size()) << ",\n";
   std::cout << "  \"rowPartitions\": " << solver.rowPartitions << ",\n";
   std::cout << "  \"columnPartitions\": " << solver.columnPartitions << ",\n";
   std::cout << "  \"discard\": \"" << (solver.best.hasPlacement ? join_cards(cards, solver.best.discard) : "") << "\",\n";

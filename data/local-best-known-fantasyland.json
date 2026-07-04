@@ -1,7 +1,68 @@
 {
   "version": 1,
-  "updatedAt": "2026-07-03T23:52:39.629Z",
+  "updatedAt": "2026-07-04T07:18:38.108Z",
   "records": [
+    {
+      "id": "rshift:0a 0b 0c 0d 1a 1b 1c 1d 2a 2b 2c 2d 3a 3b 3c 3d 4a 4b 4c 4d-25170",
+      "dealKey": "6H 6S 6C 6D 7H 7S 7C 7D 8H 8S 8C 8D 9H 9S 9C 9D 10H 10S 10C 10D",
+      "canonicalDealKey": "rshift:0a 0b 0c 0d 1a 1b 1c 1d 2a 2b 2c 2d 3a 3b 3c 3d 4a 4b 4c 4d",
+      "deal": [
+        "6H",
+        "6S",
+        "6C",
+        "6D",
+        "7H",
+        "7S",
+        "7C",
+        "7D",
+        "8H",
+        "8S",
+        "8C",
+        "8D",
+        "9H",
+        "9S",
+        "9C",
+        "9D",
+        "10H",
+        "10S",
+        "10C",
+        "10D"
+      ],
+      "grid": [
+        "6H",
+        "6S",
+        "6C",
+        "6D",
+        "7H",
+        "7S",
+        "7C",
+        "7D",
+        "8H",
+        "8S",
+        "8C",
+        "8D",
+        "9H",
+        "9S",
+        "9C",
+        "9D"
+      ],
+      "discard": [
+        "10H",
+        "10S",
+        "10C",
+        "10D"
+      ],
+      "score": {
+        "total": 25170,
+        "beforeMultiplier": 4195,
+        "hands": 10,
+        "multiplier": 6,
+        "qualityHands": 9
+      },
+      "source": "browser-local",
+      "foundAt": "2026-07-02T16:40:13.581Z",
+      "notes": "Best known placement found in this browser session. Not certified optimal."
+    },
     {
       "id": "rshift:0a 0b 0c 1a 1b 2a 2c 2d 3c 3d 4a 4b 5a 5b 5c 5d 6a 6d 7d 8c-12300",
       "dealKey": "6H 6S 6C 7H 7C 8S 8C 8D 9S 9D 10H 10C JH JS JC JD QC QD KD AS",
