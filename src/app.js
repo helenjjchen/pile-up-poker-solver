@@ -1427,6 +1427,7 @@ function renderEmptyResult() {
   discardCards.innerHTML = Array.from({ length: 4 }, () => renderPlayingCard(null)).join("");
   renderEmptyBoardAnnotations();
   solutionsRow.innerHTML = "";
+  solutionsRow.classList.remove("has-layout-drawer");
   bucketList.innerHTML = "";
   renderBestKnownPanel();
   renderProofPanel();
@@ -1525,6 +1526,7 @@ function groupedSolutions() {
 
 function renderSolutionGroups() {
   const groups = groupedSolutions().slice(0, 12);
+  solutionsRow.classList.toggle("has-layout-drawer", groups.some((group) => group.solutions.length > 1));
   solutionsRow.innerHTML = "";
 
   groups.forEach((group) => {
@@ -1537,9 +1539,9 @@ function renderSolutionGroups() {
     button.className = "solution-pill";
     button.title =
       group.solutions.length === 1
-        ? "Show this placement"
-        : "Show the first placement in this score-equivalent group";
-    button.innerHTML = `${money(group.representative.score.total)}<span>${group.representative.score.handCount} hands · ${group.representative.score.qualityHandCount} quality · ${group.solutions.length} ${group.solutions.length === 1 ? "placement" : "variants"}</span>`;
+        ? "Show this canonical layout"
+        : "Show the first score-equivalent canonical layout. Rotations/reflections and scoring-preserving row/column swaps are already folded together.";
+    button.innerHTML = `${money(group.representative.score.total)}<span>${group.representative.score.handCount} hands · ${group.representative.score.qualityHandCount} quality · ${group.solutions.length} ${group.solutions.length === 1 ? "layout" : "equivalent layouts"}</span>`;
     button.addEventListener("click", () => {
       activeSolutionIndex = group.indexes[0];
       renderResult();
@@ -1552,8 +1554,9 @@ function renderSolutionGroups() {
       if (activeInGroup) details.open = true;
 
       const summary = document.createElement("summary");
-      summary.textContent = `${group.solutions.length} variants`;
-      summary.title = "Placements with the same visible score breakdown";
+      summary.textContent = `${group.solutions.length} layouts`;
+      summary.title =
+        "Distinct canonical layouts with the same visible score breakdown. Board symmetries are already excluded.";
       details.append(summary);
 
       const variantList = document.createElement("div");
@@ -1563,7 +1566,7 @@ function renderSolutionGroups() {
         const variantButton = document.createElement("button");
         variantButton.type = "button";
         variantButton.className = `variant-button${solutionIndex === activeSolutionIndex ? " is-active" : ""}`;
-        variantButton.innerHTML = `Variant ${variantIndex + 1}<span>${solution.source ?? "placement"}</span>`;
+        variantButton.innerHTML = `Layout ${variantIndex + 1}<span>${solution.source ?? "placement"}</span>`;
         variantButton.addEventListener("click", () => {
           activeSolutionIndex = solutionIndex;
           renderResult();

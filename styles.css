@@ -595,6 +595,11 @@ h2 {
   padding-bottom: 4px;
 }
 
+.solutions-row.has-layout-drawer {
+  height: 220px;
+  overflow-y: hidden;
+}
+
 .runtime-info {
   min-height: 20px;
   margin: 2px 0 8px;
@@ -617,7 +622,12 @@ h2 {
 .solution-group {
   flex: 0 0 172px;
   display: grid;
+  grid-template-rows: auto minmax(32px, 1fr);
   gap: 6px;
+}
+
+.solutions-row.has-layout-drawer .solution-group {
+  min-height: 182px;
 }
 
 .solution-group.is-active .solution-pill {
@@ -633,9 +643,11 @@ h2 {
 }
 
 .variant-details {
+  min-height: 32px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfbfa;
+  overflow: hidden;
 }
 
 .variant-details summary {
@@ -650,6 +662,9 @@ h2 {
 .variant-list {
   display: grid;
   gap: 5px;
+  max-height: 116px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0 6px 6px;
 }
 
