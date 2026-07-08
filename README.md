@@ -46,6 +46,8 @@ This repo is set up for GitHub Pages with `.github/workflows/pages.yml`. After p
 
 The deployed Pages app is static. It can read committed data from `data/*.json`, save browser-local results in the visitor's localStorage, and run the browser exact fallback inside a module Web Worker so the UI stays responsive during proof chunks. It cannot call the local C++ exact solver API or write new best-known placements back to the repo. For file-backed local persistence and native C++ chunks, run `pnpm dev` and use `http://127.0.0.1:5173/`.
 
+V2 direction: add a small production backend for shared best-known placements and lightweight deal analytics. The app should store parsed cards/results, not uploaded screenshots, and the backend should verify submitted scores before updating any shared cache.
+
 The worker also supports an optional WASM exact backend. If `src/wasm/exactSolver.mjs` exists and exports `createExactSolver()`, the worker will try it before the JS fallback. See `src/wasm/README.md` for the expected module shape.
 
 ## Exact Solver Experiment

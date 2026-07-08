@@ -123,6 +123,16 @@ V1 implementation target:
 - If the high-bucket pass exhausts but the score is not above `$14400`, continue into the native 3+/4-row low-bucket pass. Because any board can be transposed, once every orientation with at least 3 scoring rows is exhausted, any best score above the two-or-fewer-row ceiling of `$8100` can also be certified.
 - If needed, run the native final exact 0/1/2-row low-region certifier with at most 2 scoring columns. Once high buckets, 3+/4-row buckets, and this final region are all exhausted, the result can be certified regardless of score.
 
+V2 shared cache and analytics direction:
+
+- Add a small production backend so best-known placements can be shared across users, not only saved in each browser's local storage.
+- Key shared records by `canonicalDealKey` so equivalent 20-card deals reuse the same strongest known lower bound.
+- On page load or card selection, ask the backend whether a best-known placement already exists for that canonical deal and load it before searching.
+- After a search improves the known result, submit the parsed cards, grid, discard, and score breakdown. The backend must recompute and validate the score before accepting an update.
+- Track lightweight deal events for product/analytics questions such as which deals have been tried, what scores users' attempts achieved, how often the solver improves them, and where searches time out.
+- Do not store uploaded screenshots for this v2 cache; store parsed card IDs, placements, scores, solver version, proof status, timestamps, and anonymous/session-level metadata only if needed.
+- Good implementation candidates: Supabase, Cloudflare Worker + D1/KV, or a tiny hosted API with a `best_known_deals` table and a separate append-only `deal_events` table.
+
 Solver path:
 
 - Start with an anytime local-search optimizer for a usable browser V0.
