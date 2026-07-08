@@ -150,6 +150,51 @@ assert.notEqual(
   canonicalScoreStructureKey(lowRankStraightFlushRowsGrid, lowRankStraightFlushRowsDiscard),
 );
 
+const kickerSwapGridA = [
+  "9S",
+  "8S",
+  "7S",
+  "10S",
+  "JH",
+  "KH",
+  "AH",
+  "QH",
+  "JC",
+  "KC",
+  "AC",
+  "8C",
+  "JS",
+  "KS",
+  "AS",
+  "QS",
+];
+const kickerSwapGridB = [
+  "10S",
+  "8S",
+  "7S",
+  "9S",
+  "JH",
+  "KH",
+  "AH",
+  "QH",
+  "JC",
+  "KC",
+  "AC",
+  "8C",
+  "JS",
+  "KS",
+  "AS",
+  "QS",
+];
+const kickerSwapDiscard = ["JD", "QD", "KD", "AD"];
+assert.equal(scorePlacement(kickerSwapGridA, kickerSwapDiscard).total, 24360);
+assert.equal(scorePlacement(kickerSwapGridB, kickerSwapDiscard).total, 24360);
+assert.notEqual(canonicalPlacementKey(kickerSwapGridA, kickerSwapDiscard), canonicalPlacementKey(kickerSwapGridB, kickerSwapDiscard));
+assert.equal(
+  canonicalScoreStructureKey(kickerSwapGridA, kickerSwapDiscard),
+  canonicalScoreStructureKey(kickerSwapGridB, kickerSwapDiscard),
+);
+
 const shiftedLowRun = [
   "6H",
   "6S",

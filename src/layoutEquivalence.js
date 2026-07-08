@@ -12,7 +12,17 @@ function handRankSignature(hand) {
     rankCounts.set(card.rankIndex, (rankCounts.get(card.rankIndex) ?? 0) + 1);
   }
 
-  return [...rankCounts.entries()]
+  const rankEntries = [...rankCounts.entries()];
+  const contributingRanks =
+    hand.key === "four-kind"
+      ? rankEntries.filter(([, count]) => count === 4)
+      : hand.key === "three-kind"
+        ? rankEntries.filter(([, count]) => count === 3)
+        : hand.key === "two-pair" || hand.key === "pair"
+          ? rankEntries.filter(([, count]) => count === 2)
+          : rankEntries;
+
+  return contributingRanks
     .sort((a, b) => {
       if (a[1] !== b[1]) return b[1] - a[1];
       return a[0] - b[0];
