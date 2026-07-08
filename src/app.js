@@ -13,7 +13,7 @@ import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=s
 import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-1";
 import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
-import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-2";
+import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-3";
 
 const selected = new Set();
 const attemptGridCards = Array(16).fill("");

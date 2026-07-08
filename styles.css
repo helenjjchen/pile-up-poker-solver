@@ -333,6 +333,7 @@ h2 {
 }
 
 .attempt-upload {
+  position: relative;
   display: grid;
   gap: 3px;
   min-height: 58px;
@@ -343,6 +344,9 @@ h2 {
   color: var(--ink);
   font-weight: 900;
   cursor: pointer;
+  overflow: hidden;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .attempt-upload span,
@@ -362,10 +366,18 @@ h2 {
 
 .attempt-upload input {
   position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
   opacity: 0;
-  pointer-events: none;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.attempt-upload:focus-within {
+  outline: 3px solid rgba(255, 191, 24, 0.4);
+  outline-offset: 2px;
 }
 
 .attempt-preview {

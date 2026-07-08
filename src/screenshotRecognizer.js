@@ -372,21 +372,62 @@ function recognizeDisplayedScore(imageData) {
   };
 }
 
-function loadImageBitmap(file) {
-  if (typeof createImageBitmap === "function") return createImageBitmap(file);
-
+function loadObjectUrlImage(file) {
   return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
     const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Could not read screenshot image."));
-    image.src = URL.createObjectURL(file);
+    const cleanup = () => URL.revokeObjectURL(url);
+    image.onload = () => {
+      cleanup();
+      resolve(image);
+    };
+    image.onerror = () => {
+      cleanup();
+      reject(new Error("Could not read screenshot image."));
+    };
+    image.src = url;
   });
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Could not read screenshot file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function loadDataUrlImage(file) {
+  const dataUrl = await readFileAsDataUrl(file);
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Could not decode screenshot image."));
+    image.src = dataUrl;
+  });
+}
+
+async function loadImageSource(file) {
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(file);
+    } catch {
+      // Mobile Safari may expose createImageBitmap but fail for user-selected files.
+    }
+  }
+
+  try {
+    return await loadObjectUrlImage(file);
+  } catch {
+    return loadDataUrlImage(file);
+  }
+}
+
 export async function recognizeFantasylandScreenshot(file) {
-  const bitmap = await loadImageBitmap(file);
-  const width = bitmap.width;
-  const height = bitmap.height;
+  const bitmap = await loadImageSource(file);
+  const width = bitmap.width || bitmap.naturalWidth;
+  const height = bitmap.height || bitmap.naturalHeight;
   if (!width || !height || height < width * 1.5) {
     throw new Error("This does not look like a portrait Pile-Up Poker screenshot.");
   }
@@ -396,7 +437,7 @@ export async function recognizeFantasylandScreenshot(file) {
   canvas.height = height;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) throw new Error("Screenshot reading is not available in this browser.");
-  context.drawImage(bitmap, 0, 0);
+  context.drawImage(bitmap, 0, 0, width, height);
   bitmap.close?.();
 
   const imageData = context.getImageData(0, 0, width, height);
