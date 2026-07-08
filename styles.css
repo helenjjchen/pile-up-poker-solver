@@ -334,33 +334,111 @@ h2 {
 
 .attempt-upload {
   display: grid;
-  gap: 6px;
+  gap: 3px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px dashed rgba(23, 24, 31, 0.28);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.attempt-upload span,
+.attempt-upload strong {
+  display: block;
+}
+
+.attempt-upload span {
+  font-size: 0.9rem;
+}
+
+.attempt-upload strong {
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   font-weight: 850;
-  text-transform: uppercase;
 }
 
 .attempt-upload input {
-  width: 100%;
-  color: var(--ink);
-  font-size: 0.78rem;
-  font-weight: 650;
-  text-transform: none;
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .attempt-preview {
   width: 100%;
-  max-height: 260px;
+  max-height: 190px;
   border: 1px solid var(--line);
   border-radius: 8px;
   object-fit: contain;
   background: #11131a;
 }
 
+.attempt-card-preview {
+  display: grid;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.attempt-card-preview[hidden] {
+  display: none;
+}
+
+.attempt-card-preview span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.attempt-card-preview div div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.attempt-chip {
+  min-width: 34px;
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfbfa;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.attempt-chip.is-empty {
+  color: var(--muted);
+}
+
+.attempt-manual {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.attempt-manual summary {
+  min-height: 34px;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
 .attempt-editor {
   display: grid;
   gap: 10px;
+  padding: 0 10px 10px;
 }
 
 .attempt-label {

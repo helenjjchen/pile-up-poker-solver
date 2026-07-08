@@ -13,6 +13,7 @@ import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=s
 import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-1";
 import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
+import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-1";
 
 const selected = new Set();
 const attemptGridCards = Array(16).fill("");
@@ -47,6 +48,7 @@ const optimizerTimerText = document.querySelector("#optimizerTimerText");
 const attemptScoreBadge = document.querySelector("#attemptScoreBadge");
 const attemptScreenshot = document.querySelector("#attemptScreenshot");
 const attemptPreview = document.querySelector("#attemptPreview");
+const attemptCardPreview = document.querySelector("#attemptCardPreview");
 const attemptGridSlots = document.querySelector("#attemptGridSlots");
 const attemptDiscardSlots = document.querySelector("#attemptDiscardSlots");
 const attemptSummary = document.querySelector("#attemptSummary");
@@ -146,6 +148,42 @@ function currentAttemptSolution(options = {}) {
   };
 }
 
+function setAttemptCards(grid, discard) {
+  attemptGridCards.splice(0, attemptGridCards.length, ...grid);
+  attemptDiscardCards.splice(0, attemptDiscardCards.length, ...discard);
+}
+
+function selectAttemptCardsAsDeal() {
+  const validation = attemptValidation();
+  if (!validation.valid) return false;
+  selected.clear();
+  validation.cards.forEach((cardId) => selected.add(cardId));
+  return true;
+}
+
+function attemptResultFromSolution(solution) {
+  return {
+    best: solution,
+    solutions: [solution],
+    bestByHandCount: bucketSummariesForBest(solution, false, false),
+    attempts: 0,
+    elapsedMs: 0,
+    candidateCount: 0,
+    searchOrder: "player attempt",
+    isAttemptView: true,
+    exact: false,
+  };
+}
+
+function showAttemptPlacement() {
+  const solution = currentAttemptSolution({ requireSelectedMatch: true });
+  if (!solution) return false;
+  latestResult = attemptResultFromSolution(solution);
+  activeSolutionIndex = 0;
+  renderResult();
+  return true;
+}
+
 function attemptOptionCards(currentCardId) {
   const sourceCards = selected.size === 20 ? selectedCards() : allDeckCardIds();
   if (!currentCardId || sourceCards.includes(currentCardId)) return sourceCards;
@@ -181,7 +219,35 @@ function renderAttemptEditor() {
   attemptGridSlots.innerHTML = attemptGridCards
     .map((cardId, index) => renderAttemptSelect("grid", index, cardId))
     .join("");
+  renderAttemptCardPreview();
   renderAttemptSummary();
+}
+
+function renderAttemptCardChip(cardId) {
+  const card = CARD_BY_ID[cardId];
+  if (!card) return '<span class="attempt-chip is-empty">--</span>';
+  const suit = SUIT_META[card.suit];
+  return `<span class="attempt-chip ${suit.colorClass}">${card.rank}${suit.label}</span>`;
+}
+
+function renderAttemptCardPreview() {
+  const validation = attemptValidation();
+  attemptCardPreview.hidden = validation.filledSlots === 0;
+  if (validation.filledSlots === 0) {
+    attemptCardPreview.innerHTML = "";
+    return;
+  }
+
+  attemptCardPreview.innerHTML = `
+    <div>
+      <span>Grid</span>
+      <div>${attemptGridCards.map(renderAttemptCardChip).join("")}</div>
+    </div>
+    <div>
+      <span>Discard</span>
+      <div>${attemptDiscardCards.map(renderAttemptCardChip).join("")}</div>
+    </div>
+  `;
 }
 
 function renderAttemptSummary() {
@@ -191,7 +257,7 @@ function renderAttemptSummary() {
 
   if (validation.filledSlots === 0) {
     attemptScoreBadge.textContent = "Optional";
-    attemptSummary.textContent = "Upload a screenshot, then enter the visible grid and discard to score it.";
+    attemptSummary.textContent = "Upload a Pile-Up screenshot to load the attempt automatically.";
     return;
   }
 
@@ -260,7 +326,7 @@ function handleAttemptSlotChange(event) {
   renderAttemptEditor();
 }
 
-function handleAttemptScreenshotChange() {
+async function handleAttemptScreenshotChange() {
   if (attemptPreviewUrl) {
     URL.revokeObjectURL(attemptPreviewUrl);
     attemptPreviewUrl = null;
@@ -270,12 +336,32 @@ function handleAttemptScreenshotChange() {
   if (!file) {
     attemptPreview.hidden = true;
     attemptPreview.removeAttribute("src");
+    renderAttemptSummary();
     return;
   }
 
   attemptPreviewUrl = URL.createObjectURL(file);
   attemptPreview.src = attemptPreviewUrl;
   attemptPreview.hidden = false;
+  attemptScoreBadge.textContent = "Reading...";
+  attemptSummary.classList.remove("is-good", "is-warning");
+  attemptSummary.textContent = "Reading screenshot cards...";
+
+  try {
+    const recognized = await recognizeFantasylandScreenshot(file);
+    setAttemptCards(recognized.grid, recognized.discard);
+    renderAttemptEditor();
+    selectAttemptCardsAsDeal();
+    activeSolutionIndex = 0;
+    resetOptimizerTimer();
+    renderSelectionState();
+    showAttemptPlacement();
+    statusLine.textContent = `Loaded player attempt from screenshot: ${money(attemptValidation().score.total)}.`;
+  } catch (error) {
+    renderAttemptEditor();
+    attemptSummary.textContent = error instanceof Error ? error.message : "Could not read screenshot cards.";
+    attemptSummary.classList.add("is-warning");
+  }
 }
 
 function clearAttempt() {
@@ -288,19 +374,19 @@ function clearAttempt() {
   attemptScreenshot.value = "";
   attemptPreview.hidden = true;
   attemptPreview.removeAttribute("src");
+  attemptCardPreview.hidden = true;
+  attemptCardPreview.innerHTML = "";
   renderAttemptEditor();
 }
 
 function useAttemptCardsAsDeal() {
   const validation = attemptValidation();
   if (!validation.valid) return;
-  selected.clear();
-  validation.cards.forEach((cardId) => selected.add(cardId));
-  latestResult = null;
+  selectAttemptCardsAsDeal();
   activeSolutionIndex = 0;
   resetOptimizerTimer();
   renderSelectionState();
-  renderEmptyResult();
+  showAttemptPlacement();
 }
 
 function renderOptimizerTimer() {
@@ -2009,14 +2095,20 @@ function renderResult() {
   resultHands.textContent = String(score.handCount);
   resultMultiplier.textContent = `x${score.multiplier}`;
   resultQuality.textContent = String(score.qualityHandCount);
-  runtimeInfo.textContent = latestResult.isBestKnownView
+  runtimeInfo.textContent = latestResult.isAttemptView
+    ? "Player attempt from screenshot"
+    : latestResult.isBestKnownView
     ? latestResult.exact
       ? "Certified saved placement"
       : "Saved best-known placement"
     : latestResult.exact
       ? `Certified optimal · ${Math.round(latestResult.elapsedMs).toLocaleString()} ms`
       : `${Math.round(latestResult.elapsedMs).toLocaleString()} ms · ${latestResult.attempts.toLocaleString()} searches`;
-  resultModeLabel.textContent = latestResult.exact ? "Best Possible" : "Best Found";
+  resultModeLabel.textContent = latestResult.isAttemptView
+    ? "Player Attempt"
+    : latestResult.exact
+      ? "Best Possible"
+      : "Best Found";
 
   boardGrid.innerHTML = solution.grid.map((cardId) => renderPlayingCard(cardId)).join("");
   discardCards.innerHTML = solution.discard.map((cardId) => renderPlayingCard(cardId)).join("");

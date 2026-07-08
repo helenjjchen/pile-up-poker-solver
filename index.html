@@ -49,24 +49,29 @@
             </summary>
             <div class="attempt-content">
               <label class="attempt-upload" for="attemptScreenshot">
-                <span>Screenshot reference</span>
+                <span>Upload Screenshot</span>
+                <strong>Auto-detect grid + discard</strong>
                 <input id="attemptScreenshot" type="file" accept="image/*" />
               </label>
               <img class="attempt-preview" id="attemptPreview" alt="Uploaded player attempt screenshot" hidden />
+              <div class="attempt-card-preview" id="attemptCardPreview" hidden></div>
 
-              <div class="attempt-editor">
-                <div class="attempt-discard-block">
-                  <span class="attempt-label">Discard</span>
-                  <div class="attempt-discard-slots" id="attemptDiscardSlots"></div>
+              <details class="attempt-manual">
+                <summary>Adjust detected cards</summary>
+                <div class="attempt-editor">
+                  <div class="attempt-discard-block">
+                    <span class="attempt-label">Discard</span>
+                    <div class="attempt-discard-slots" id="attemptDiscardSlots"></div>
+                  </div>
+                  <div class="attempt-grid-block">
+                    <span class="attempt-label">Grid</span>
+                    <div class="attempt-grid-slots" id="attemptGridSlots"></div>
+                  </div>
                 </div>
-                <div class="attempt-grid-block">
-                  <span class="attempt-label">Grid</span>
-                  <div class="attempt-grid-slots" id="attemptGridSlots"></div>
-                </div>
-              </div>
+              </details>
 
               <p class="attempt-summary" id="attemptSummary">
-                Upload a screenshot, then enter the visible grid and discard to score it.
+                Upload a Pile-Up screenshot to load the attempt automatically.
               </p>
               <div class="attempt-actions">
                 <button type="button" class="secondary-button" id="useAttemptDealButton" disabled>
@@ -168,6 +173,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/app.js?v=solver-cache-11"></script>
+    <script type="module" src="./src/app.js?v=solver-cache-12"></script>
   </body>
 </html>

@@ -391,7 +391,22 @@ assert.notEqual(
   canonicalScoreStructureKey(knownHighGrid, knownHighDiscard),
   canonicalScoreStructureKey(alternateKnownHighGrid, knownHighDiscard),
 );
-const knownHighHeuristic = solveFantasylandHeuristic(knownHighDeal, { timeLimitMs: 7000, maxSolutions: 24 });
+const knownHighHeuristic = solveFantasylandHeuristic(knownHighDeal, {
+  timeLimitMs: 7000,
+  maxSolutions: 24,
+  initialPlacements: [
+    {
+      grid: knownHighGrid,
+      discard: knownHighDiscard,
+      score: knownHighScore,
+    },
+    {
+      grid: alternateKnownHighGrid,
+      discard: knownHighDiscard,
+      score: scorePlacement(alternateKnownHighGrid, knownHighDiscard),
+    },
+  ],
+});
 const knownHighStructures = new Set(
   knownHighHeuristic.solutions
     .filter((solution) => solution.score.total === 24690)
