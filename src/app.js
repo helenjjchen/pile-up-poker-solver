@@ -13,7 +13,7 @@ import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=s
 import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-1";
 import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
-import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-1";
+import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-2";
 
 const selected = new Set();
 const attemptGridCards = Array(16).fill("");
@@ -230,6 +230,20 @@ function renderAttemptCardChip(cardId) {
   return `<span class="attempt-chip ${suit.colorClass}">${card.rank}${suit.label}</span>`;
 }
 
+function screenshotScoreMismatch(recognized) {
+  if (!recognized?.displayedScore) return null;
+  const score = scorePlacement(recognized.grid, recognized.discard);
+  const expected = recognized.displayedScore;
+  const mismatches = [];
+  if (Number.isFinite(expected.total) && expected.total !== score.total) {
+    mismatches.push(`expected ${money(expected.total)}, got ${money(score.total)}`);
+  }
+  if (Number.isFinite(expected.handCount) && expected.handCount !== score.handCount) {
+    mismatches.push(`expected ${expected.handCount} hands, got ${score.handCount}`);
+  }
+  return mismatches.length ? mismatches.join("; ") : null;
+}
+
 function renderAttemptCardPreview() {
   const validation = attemptValidation();
   attemptCardPreview.hidden = validation.filledSlots === 0;
@@ -239,13 +253,13 @@ function renderAttemptCardPreview() {
   }
 
   attemptCardPreview.innerHTML = `
-    <div>
+    <div class="attempt-chip-section">
       <span>Grid</span>
-      <div>${attemptGridCards.map(renderAttemptCardChip).join("")}</div>
+      <div class="attempt-chip-grid">${attemptGridCards.map(renderAttemptCardChip).join("")}</div>
     </div>
-    <div>
+    <div class="attempt-chip-section">
       <span>Discard</span>
-      <div>${attemptDiscardCards.map(renderAttemptCardChip).join("")}</div>
+      <div class="attempt-chip-discard">${attemptDiscardCards.map(renderAttemptCardChip).join("")}</div>
     </div>
   `;
 }
@@ -351,6 +365,12 @@ async function handleAttemptScreenshotChange() {
     const recognized = await recognizeFantasylandScreenshot(file);
     setAttemptCards(recognized.grid, recognized.discard);
     renderAttemptEditor();
+    const mismatch = screenshotScoreMismatch(recognized);
+    if (mismatch) {
+      attemptSummary.textContent = `Detected cards do not match the screenshot score (${mismatch}). Please adjust them.`;
+      attemptSummary.classList.add("is-warning");
+      return;
+    }
     selectAttemptCardsAsDeal();
     activeSolutionIndex = 0;
     resetOptimizerTimer();

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pile-Up Poker Solver</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=attempt-grid-1" />
   </head>
   <body>
     <main class="app-shell">
@@ -59,13 +59,13 @@
               <details class="attempt-manual">
                 <summary>Adjust detected cards</summary>
                 <div class="attempt-editor">
-                  <div class="attempt-discard-block">
-                    <span class="attempt-label">Discard</span>
-                    <div class="attempt-discard-slots" id="attemptDiscardSlots"></div>
-                  </div>
                   <div class="attempt-grid-block">
                     <span class="attempt-label">Grid</span>
                     <div class="attempt-grid-slots" id="attemptGridSlots"></div>
+                  </div>
+                  <div class="attempt-discard-block">
+                    <span class="attempt-label">Discard</span>
+                    <div class="attempt-discard-slots" id="attemptDiscardSlots"></div>
                   </div>
                 </div>
               </details>
@@ -173,6 +173,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/app.js?v=solver-cache-12"></script>
+    <script type="module" src="./src/app.js?v=solver-cache-13"></script>
   </body>
 </html>

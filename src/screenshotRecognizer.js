@@ -224,7 +224,7 @@ function classifyRank(features) {
   if (pixelCount < 25) return { rank: null, confidence: 0 };
   if (holes.length >= 2) return { rank: "8", confidence: 0.95 };
   if (
-    componentCount >= 2 ||
+    (componentCount >= 2 && pixelCount > 110) ||
     (width >= 20 && holes.length === 1 && primaryHole.y > 0.4 && primaryHole.x > 0.55)
   ) {
     return { rank: "10", confidence: 0.95 };
@@ -238,7 +238,7 @@ function classifyRank(features) {
   if (top > middleY * 1.8 && top > bottom * 1.7 && pixelCount < 75) {
     return { rank: "7", confidence: 0.9 };
   }
-  if (right > (left + middleX) * 1.05 && top > middleY * 1.5 && bottom > middleY * 1.5) {
+  if (right > (left + middleX) * 0.85 && top > middleY * 1.4 && bottom > middleY * 1.4 && pixelCount > 70) {
     return { rank: "Q", confidence: 0.86 };
   }
   if (right > left * 1.8 && bottom >= top * 1.6) {
@@ -246,6 +246,9 @@ function classifyRank(features) {
   }
   if (width > 22 && pixelCount < 42) {
     return { rank: "J", confidence: 0.78 };
+  }
+  if (width > 22 && pixelCount > 65 && top < middleY * 0.5 && bottom >= middleY * 0.9) {
+    return { rank: "A", confidence: 0.78 };
   }
   if (width > 24 && left > right * 4) {
     return { rank: "K", confidence: 0.78 };
@@ -295,6 +298,80 @@ function recognizeSlot(imageData, rect) {
   };
 }
 
+function brightPixelMask(imageData, rect) {
+  const points = [];
+  for (let y = rect.top; y < rect.bottom; y += 1) {
+    for (let x = rect.left; x < rect.right; x += 1) {
+      const [red, green, blue] = pixelAt(imageData, x, y);
+      if (red > 165 && green > 165 && blue > 165) points.push([x - rect.left, y - rect.top]);
+    }
+  }
+  return points;
+}
+
+function componentBounds(points, width, height) {
+  return connectedComponents(points, width, height)
+    .map((component) => {
+      const xs = component.map(([x]) => x);
+      const ys = component.map(([, y]) => y);
+      return {
+        left: Math.min(...xs),
+        top: Math.min(...ys),
+        right: Math.max(...xs) + 1,
+        bottom: Math.max(...ys) + 1,
+        size: component.length,
+      };
+    })
+    .filter((box) => box.size > 4 && box.bottom - box.top > 5)
+    .sort((a, b) => a.left - b.left);
+}
+
+function readSimpleDigitsFromBounds(bounds) {
+  const digits = [];
+  for (const box of bounds) {
+    const width = box.right - box.left;
+    const height = box.bottom - box.top;
+    if (height < 8) continue;
+    if (width <= 4 && height >= 10) {
+      digits.push("1");
+      continue;
+    }
+    if (width >= 8 && height >= 10) {
+      digits.push("0");
+    }
+  }
+  return digits.join("");
+}
+
+function recognizeDisplayedScore(imageData) {
+  const width = imageData.width;
+  const height = imageData.height;
+  const handRect = clampRect(
+    {
+      left: width * 0.76,
+      top: height * 0.145,
+      right: width * 0.94,
+      bottom: height * 0.18,
+    },
+    width,
+    height,
+  );
+  const handBounds = componentBounds(
+    brightPixelMask(imageData, handRect),
+    handRect.right - handRect.left,
+    handRect.bottom - handRect.top,
+  );
+  const handDigits = readSimpleDigitsFromBounds(handBounds);
+
+  return {
+    handCount: handDigits === "10" ? 10 : null,
+    // The visible dollar total is a useful future cross-check, but false reads
+    // are worse than no read because they can reject a good upload. Keep it
+    // unset until the OCR is robust across cropped/antialiased screenshots.
+    total: null,
+  };
+}
+
 function loadImageBitmap(file) {
   if (typeof createImageBitmap === "function") return createImageBitmap(file);
 
@@ -326,6 +403,7 @@ export async function recognizeFantasylandScreenshot(file) {
   const rects = slotRects(width, height);
   const gridSlots = rects.grid.map((rect) => recognizeSlot(imageData, rect));
   const discardSlots = rects.discard.map((rect) => recognizeSlot(imageData, rect));
+  const displayedScore = recognizeDisplayedScore(imageData);
   const cards = [...gridSlots, ...discardSlots].map((slot) => slot.cardId);
   const missing = cards.filter(Boolean).length !== 20;
   const duplicates = new Set(cards.filter(Boolean)).size !== cards.filter(Boolean).length;
@@ -339,5 +417,6 @@ export async function recognizeFantasylandScreenshot(file) {
     grid: gridSlots.map((slot) => slot.cardId),
     discard: discardSlots.map((slot) => slot.cardId),
     confidence,
+    displayedScore,
   };
 }

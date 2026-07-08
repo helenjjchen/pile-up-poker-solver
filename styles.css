@@ -397,15 +397,28 @@ h2 {
   text-transform: uppercase;
 }
 
-.attempt-card-preview div div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 5px;
+.attempt-chip-section {
+  display: grid;
+  gap: 5px;
+}
+
+.attempt-chip-grid,
+.attempt-chip-discard {
+  display: grid;
+  gap: 5px;
+}
+
+.attempt-chip-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.attempt-chip-discard {
+  grid-template-columns: repeat(4, minmax(0, 42px));
+  justify-content: start;
 }
 
 .attempt-chip {
-  min-width: 34px;
+  min-width: 0;
   padding: 3px 5px;
   border: 1px solid var(--line);
   border-radius: 6px;
