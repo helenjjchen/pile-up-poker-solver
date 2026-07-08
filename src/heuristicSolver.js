@@ -69,6 +69,21 @@ function makeStateFromParts(gridCards, discardCards) {
   return [...gridCards.slice(0, 16), ...discardCards.slice(0, 4)];
 }
 
+function stateDealKey(state) {
+  return sortCardIds(state).join("|");
+}
+
+function placementToState(placement, expectedDealKey) {
+  if (!placement?.grid || !placement?.discard || placement.grid.length !== 16 || placement.discard.length !== 4) {
+    return null;
+  }
+  const state = makeStateFromParts(placement.grid, placement.discard);
+  if (state.some((cardId) => !cardId)) return null;
+  if (new Set(state).size !== 20) return null;
+  if (expectedDealKey && stateDealKey(state) !== expectedDealKey) return null;
+  return state;
+}
+
 function placeLineSeed(cardIds, candidate, lineSlots) {
   const grid = Array(16).fill(null);
   candidate.cards.forEach((cardId, index) => {
@@ -171,7 +186,13 @@ function uniqueStates(states) {
   });
 }
 
-function makeStructuredStarts(cardIds, candidates, deadlineMs = Infinity) {
+function makeStructuredStarts(cardIds, candidates, deadlineMs = Infinity, limits = {}) {
+  const lineCandidateLimit = limits.lineCandidateLimit ?? 80;
+  const cornerCandidateLimit = limits.cornerCandidateLimit ?? 40;
+  const discardCandidateLimit = limits.discardCandidateLimit ?? 180;
+  const cornerEdgeSpecLimit = limits.cornerEdgeSpecLimit ?? 900;
+  const topCandidateLimit = limits.topCandidateLimit ?? 36;
+  const maxStarts = limits.maxStarts ?? 1600;
   const sorted = sortCardIds(cardIds);
   const reversed = [...sorted].reverse();
   const suitSorted = [...cardIds].sort((a, b) => {
@@ -196,11 +217,12 @@ function makeStructuredStarts(cardIds, candidates, deadlineMs = Infinity) {
     [0, 3, 12, 15],
   ];
 
-  for (const candidate of candidates.slice(0, 80)) {
+  for (const candidate of candidates.slice(0, lineCandidateLimit)) {
     if (performance.now() >= deadlineMs) return uniqueStates(starts);
     const rest = remainingCards(sorted, candidate.cards);
     starts.push(makeStateFromParts(rest.slice(0, 16), candidate.cards));
     lineSlots.forEach((slots) => starts.push(placeLineSeed(cardIds, candidate, slots)));
+    if (starts.length > maxStarts) return uniqueStates(starts);
   }
 
   const cornerOrders = [
@@ -220,7 +242,7 @@ function makeStructuredStarts(cardIds, candidates, deadlineMs = Infinity) {
     "two-pair": 5,
     pair: 6,
   };
-  const cornerCandidates = candidates.slice(0, 40);
+  const cornerCandidates = candidates.slice(0, cornerCandidateLimit);
   const discardCandidates = [...candidates]
     .sort((a, b) => {
       const priorityA = discardPriority[a.hand.key] ?? 9;
@@ -229,7 +251,7 @@ function makeStructuredStarts(cardIds, candidates, deadlineMs = Infinity) {
       if (a.hand.base !== b.hand.base) return b.hand.base - a.hand.base;
       return a.cards.join("").localeCompare(b.cards.join(""));
     })
-    .slice(0, 180);
+    .slice(0, discardCandidateLimit);
   const cornerEdgeSpecs = [];
   cornerSpecLoop: for (const cornerCandidate of cornerCandidates) {
     if (performance.now() >= deadlineMs) break;
@@ -285,28 +307,26 @@ function makeStructuredStarts(cardIds, candidates, deadlineMs = Infinity) {
     }
   }
 
-  cornerEdgeSpecs
-    .sort((a, b) => b.rough - a.rough)
-    .slice(0, 900)
-    .forEach((spec) => {
-      if (spec.kind === "corner-discard") {
-        starts.push(placeCornerAndDiscardSeed(cardIds, spec.cornerCandidate, spec.discardCandidate, spec.order));
-      } else {
-        starts.push(
-          placeCornerEdgesDiscardSeed(
-            cardIds,
-            spec.cornerCandidate,
-            spec.discardCandidate,
-            spec.order,
-            spec.firstEdge,
-            spec.secondEdge,
-            spec.mode,
-          ),
-        );
-      }
-    });
+  for (const spec of cornerEdgeSpecs.sort((a, b) => b.rough - a.rough).slice(0, cornerEdgeSpecLimit)) {
+    if (starts.length > maxStarts) return uniqueStates(starts);
+    if (spec.kind === "corner-discard") {
+      starts.push(placeCornerAndDiscardSeed(cardIds, spec.cornerCandidate, spec.discardCandidate, spec.order));
+    } else {
+      starts.push(
+        placeCornerEdgesDiscardSeed(
+          cardIds,
+          spec.cornerCandidate,
+          spec.discardCandidate,
+          spec.order,
+          spec.firstEdge,
+          spec.secondEdge,
+          spec.mode,
+        ),
+      );
+    }
+  }
 
-  const top = candidates.slice(0, 36);
+  const top = candidates.slice(0, topCandidateLimit);
   for (let firstIndex = 0; firstIndex < top.length; firstIndex += 1) {
     if (performance.now() >= deadlineMs) return uniqueStates(starts);
     for (let secondIndex = firstIndex + 1; secondIndex < top.length; secondIndex += 1) {
@@ -330,7 +350,7 @@ function makeStructuredStarts(cardIds, candidates, deadlineMs = Infinity) {
         }
       }
       starts.push(makeStateFromParts(grid, rest.slice(restIndex, restIndex + 4)));
-      if (starts.length > 900) return uniqueStates(starts);
+      if (starts.length > maxStarts) return uniqueStates(starts);
     }
   }
 
@@ -441,11 +461,38 @@ export function solveFantasylandHeuristic(cardIds, options = {}) {
   const timeLimitMs = options.timeLimitMs ?? 4200;
   const deadlineMs = startedAt + timeLimitMs;
   const incumbentTotal = options.incumbentTotal ?? 0;
+  const fastMode = Boolean(options.fastMode);
   const random = mulberry32(options.seed ?? 20260701);
+  const expectedDealKey = stateDealKey(cardIds);
+  const initialStates = (options.initialPlacements ?? [])
+    .map((placement) => placementToState(placement, expectedDealKey))
+    .filter(Boolean);
   const candidates = allCombinations4(cardIds);
-  const starts = rankStartStates(makeStructuredStarts(cardIds, candidates, deadlineMs));
+  const startBuildBudgetMs = fastMode ? Math.min(2500, Math.max(500, timeLimitMs * 0.18)) : timeLimitMs;
+  const startDeadlineMs = Math.min(deadlineMs, startedAt + startBuildBudgetMs);
+  const starts = rankStartStates([
+    ...initialStates,
+    ...makeStructuredStarts(
+      cardIds,
+      candidates,
+      startDeadlineMs,
+      fastMode
+        ? {
+            lineCandidateLimit: 50,
+            cornerCandidateLimit: 28,
+            discardCandidateLimit: 120,
+            cornerEdgeSpecLimit: 520,
+            topCandidateLimit: 28,
+            maxStarts: 620,
+          }
+        : {},
+    ),
+  ]);
   const solutions = new Map();
   let attempts = 0;
+  const structuredPasses = options.structuredPasses ?? (fastMode ? 70 : 90);
+  const randomAnnealIterations = options.randomAnnealIterations ?? (fastMode ? 560 : 750);
+  const randomPasses = options.randomPasses ?? (fastMode ? 48 : 70);
 
   starts.slice(0, 6).forEach((state) => {
     addSolution(solutions, state.state, state.score, "baseline");
@@ -454,15 +501,15 @@ export function solveFantasylandHeuristic(cardIds, options = {}) {
 
   for (const start of starts) {
     if (performance.now() >= deadlineMs) break;
-    const improved = improveBySwaps(start.state, 90, null, deadlineMs);
+    const improved = improveBySwaps(start.state, structuredPasses, null, deadlineMs);
     addSolution(solutions, improved.state, improved.score, "structured");
     attempts += 1;
   }
 
   while (performance.now() < deadlineMs) {
     const shuffled = shuffle(cardIds, random);
-    const annealed = anneal(shuffled, random, 750, null, deadlineMs);
-    const improved = improveBySwaps(annealed.state, 70, null, deadlineMs);
+    const annealed = anneal(shuffled, random, randomAnnealIterations, null, deadlineMs);
+    const improved = improveBySwaps(annealed.state, randomPasses, null, deadlineMs);
     addSolution(solutions, improved.state, improved.score, "random");
     attempts += 1;
   }

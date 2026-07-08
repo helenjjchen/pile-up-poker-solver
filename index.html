@@ -10,7 +10,7 @@
     <main class="app-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Fantasyland V0</p>
+          <p class="eyebrow">Fantasyland V1</p>
           <h1>Pile-Up Poker Solver</h1>
         </div>
         <div class="topbar-score" id="topScore">$0</div>
@@ -41,6 +41,41 @@
             <span class="timer-spinner" aria-hidden="true"></span>
             <strong id="optimizerTimerText">Idle</strong>
           </div>
+
+          <details class="attempt-panel" open>
+            <summary>
+              <span>Player Attempt</span>
+              <strong id="attemptScoreBadge">Optional</strong>
+            </summary>
+            <div class="attempt-content">
+              <label class="attempt-upload" for="attemptScreenshot">
+                <span>Screenshot reference</span>
+                <input id="attemptScreenshot" type="file" accept="image/*" />
+              </label>
+              <img class="attempt-preview" id="attemptPreview" alt="Uploaded player attempt screenshot" hidden />
+
+              <div class="attempt-editor">
+                <div class="attempt-discard-block">
+                  <span class="attempt-label">Discard</span>
+                  <div class="attempt-discard-slots" id="attemptDiscardSlots"></div>
+                </div>
+                <div class="attempt-grid-block">
+                  <span class="attempt-label">Grid</span>
+                  <div class="attempt-grid-slots" id="attemptGridSlots"></div>
+                </div>
+              </div>
+
+              <p class="attempt-summary" id="attemptSummary">
+                Upload a screenshot, then enter the visible grid and discard to score it.
+              </p>
+              <div class="attempt-actions">
+                <button type="button" class="secondary-button" id="useAttemptDealButton" disabled>
+                  Use Attempt Cards
+                </button>
+                <button type="button" class="secondary-button" id="clearAttemptButton">Clear Attempt</button>
+              </div>
+            </div>
+          </details>
         </aside>
 
         <section class="result-panel" aria-label="Optimizer result">
@@ -87,6 +122,20 @@
             </div>
           </details>
 
+          <details class="scoring-explainer">
+            <summary>What counts as a scoring way?</summary>
+            <p>
+              The solver is trying to maximize dollars first, then preserve truly different scoring structures for tied
+              outcomes. It folds rotations/reflections of the same board, suit-only swaps when suits do not affect the
+              hand, and irrelevant kickers for pairs, trips, quads, and two pair.
+            </p>
+            <p>
+              It still shows separate ways when the same total, hand count, and quality count come from different hand
+              type mixes, such as one placement using trips plus two pair while another uses a pair plus a straight.
+              Best-dollar search is prioritized over collecting every equivalent-looking placement.
+            </p>
+          </details>
+
           <div class="board-area">
             <div class="discard-stack">
               <div class="area-label">Discard</div>
@@ -119,6 +168,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/app.js?v=solver-cache-10"></script>
+    <script type="module" src="./src/app.js?v=solver-cache-11"></script>
   </body>
 </html>

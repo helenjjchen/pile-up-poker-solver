@@ -5,15 +5,18 @@ import {
   SUIT_META,
   canonicalizeDeal,
   canonicalDealKey,
+  cardLabel,
   sortCardIds,
   translatePlacementToDeal,
 } from "./cards.js";
 import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=solver-equivalence-3";
-import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-equivalence-2";
+import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-1";
 import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
 
 const selected = new Set();
+const attemptGridCards = Array(16).fill("");
+const attemptDiscardCards = Array(4).fill("");
 let latestResult = null;
 let activeSolutionIndex = 0;
 let seededBestKnown = new Map();
@@ -21,12 +24,16 @@ let sharedBestKnown = new Map();
 let localBestKnown = new Map();
 let exactProofStatuses = new Map();
 let exactWorker = null;
+let heuristicWorker = null;
 let exactWorkerRequestId = 0;
+let heuristicWorkerRequestId = 0;
 let exactWorkerUnavailable = false;
+let heuristicWorkerUnavailable = false;
 let optimizerTimerInterval = null;
 let optimizerTimerStartedAt = 0;
 let optimizerTimerBudget = 0;
 let optimizerTimerPhase = "Working";
+let attemptPreviewUrl = null;
 
 const deckGrid = document.querySelector("#deckGrid");
 const selectedCount = document.querySelector("#selectedCount");
@@ -37,6 +44,14 @@ const searchDepth = document.querySelector("#searchDepth");
 const statusLine = document.querySelector("#statusLine");
 const optimizerTimer = document.querySelector("#optimizerTimer");
 const optimizerTimerText = document.querySelector("#optimizerTimerText");
+const attemptScoreBadge = document.querySelector("#attemptScoreBadge");
+const attemptScreenshot = document.querySelector("#attemptScreenshot");
+const attemptPreview = document.querySelector("#attemptPreview");
+const attemptGridSlots = document.querySelector("#attemptGridSlots");
+const attemptDiscardSlots = document.querySelector("#attemptDiscardSlots");
+const attemptSummary = document.querySelector("#attemptSummary");
+const useAttemptDealButton = document.querySelector("#useAttemptDealButton");
+const clearAttemptButton = document.querySelector("#clearAttemptButton");
 const topScore = document.querySelector("#topScore");
 const resultModeLabel = document.querySelector("#resultModeLabel");
 const resultTotal = document.querySelector("#resultTotal");
@@ -79,9 +94,213 @@ function selectedCards() {
 function searchBudgetLabel() {
   const seconds = Math.round(Number(searchDepth.value) / 1000);
   const selectedOption = searchDepth.selectedOptions?.[0]?.textContent?.split("·")[0]?.trim() ?? "Search";
-  const heuristicSeconds = Math.round((Math.max(750, Math.floor(Number(searchDepth.value) * 0.6)) / 1000) * 10) / 10;
-  const exactSeconds = Math.round(((Number(searchDepth.value) - Math.max(750, Math.floor(Number(searchDepth.value) * 0.6))) / 1000) * 10) / 10;
+  const heuristicSeconds = Math.round((Math.max(750, Math.floor(Number(searchDepth.value) * 0.8)) / 1000) * 10) / 10;
+  const exactSeconds = Math.round(((Number(searchDepth.value) - Math.max(750, Math.floor(Number(searchDepth.value) * 0.8))) / 1000) * 10) / 10;
   return `${selectedOption}: ${seconds}s total (${heuristicSeconds}s search + ${exactSeconds}s proof)`;
+}
+
+function allDeckCardIds() {
+  return DECK.map((card) => card.id);
+}
+
+function attemptCards() {
+  return [...attemptGridCards, ...attemptDiscardCards].filter(Boolean);
+}
+
+function attemptValidation() {
+  const cards = attemptCards();
+  const filledSlots = cards.length;
+  const uniqueCardCount = new Set(cards).size;
+  const hasDuplicates = uniqueCardCount !== filledSlots;
+  const complete = filledSlots === 20 && attemptGridCards.every(Boolean) && attemptDiscardCards.every(Boolean);
+  const valid = complete && !hasDuplicates;
+  const selectedDealKey = selected.size === 20 ? dealKey(selectedCards()) : null;
+  const attemptDealKey = valid ? dealKey(cards) : null;
+  const matchesSelectedDeal = Boolean(valid && selectedDealKey && attemptDealKey === selectedDealKey);
+  const score = valid ? scorePlacement(attemptGridCards, attemptDiscardCards) : null;
+
+  return {
+    cards,
+    filledSlots,
+    hasDuplicates,
+    complete,
+    valid,
+    selectedDealKey,
+    attemptDealKey,
+    matchesSelectedDeal,
+    score,
+  };
+}
+
+function currentAttemptSolution(options = {}) {
+  const validation = attemptValidation();
+  if (!validation.valid) return null;
+  if (options.requireSelectedMatch && !validation.matchesSelectedDeal) return null;
+
+  return {
+    grid: [...attemptGridCards],
+    discard: [...attemptDiscardCards],
+    score: validation.score,
+    source: "player attempt",
+    key: `player-attempt-${validation.attemptDealKey}`,
+  };
+}
+
+function attemptOptionCards(currentCardId) {
+  const sourceCards = selected.size === 20 ? selectedCards() : allDeckCardIds();
+  if (!currentCardId || sourceCards.includes(currentCardId)) return sourceCards;
+  return sortCardIds([...sourceCards, currentCardId]);
+}
+
+function renderAttemptSelect(zone, index, currentCardId) {
+  const usedCards = new Set(attemptCards());
+  const label = zone === "grid" ? `${Math.floor(index / 4) + 1}.${(index % 4) + 1}` : `D${index + 1}`;
+  const options = [
+    '<option value="">--</option>',
+    ...attemptOptionCards(currentCardId).map((cardId) => {
+      const selectedAttr = cardId === currentCardId ? " selected" : "";
+      const disabledAttr = usedCards.has(cardId) && cardId !== currentCardId ? " disabled" : "";
+      return `<option value="${cardId}"${selectedAttr}${disabledAttr}>${cardLabel(cardId)}</option>`;
+    }),
+  ].join("");
+
+  return `
+    <label class="attempt-slot">
+      <span>${label}</span>
+      <select data-attempt-zone="${zone}" data-attempt-index="${index}" aria-label="${zone} card ${index + 1}">
+        ${options}
+      </select>
+    </label>
+  `;
+}
+
+function renderAttemptEditor() {
+  attemptDiscardSlots.innerHTML = attemptDiscardCards
+    .map((cardId, index) => renderAttemptSelect("discard", index, cardId))
+    .join("");
+  attemptGridSlots.innerHTML = attemptGridCards
+    .map((cardId, index) => renderAttemptSelect("grid", index, cardId))
+    .join("");
+  renderAttemptSummary();
+}
+
+function renderAttemptSummary() {
+  const validation = attemptValidation();
+  attemptSummary.classList.remove("is-good", "is-warning");
+  useAttemptDealButton.disabled = !validation.valid;
+
+  if (validation.filledSlots === 0) {
+    attemptScoreBadge.textContent = "Optional";
+    attemptSummary.textContent = "Upload a screenshot, then enter the visible grid and discard to score it.";
+    return;
+  }
+
+  if (validation.hasDuplicates) {
+    attemptScoreBadge.textContent = `${validation.filledSlots}/20`;
+    attemptSummary.textContent = "Duplicate cards in the attempt. Each card can only appear once.";
+    attemptSummary.classList.add("is-warning");
+    return;
+  }
+
+  if (!validation.complete) {
+    attemptScoreBadge.textContent = `${validation.filledSlots}/20`;
+    attemptSummary.textContent = `Enter ${20 - validation.filledSlots} more card${20 - validation.filledSlots === 1 ? "" : "s"} to score the attempt.`;
+    return;
+  }
+
+  attemptScoreBadge.textContent = money(validation.score.total);
+  const baseText = `${money(validation.score.total)} · ${validation.score.handCount} hands · ${validation.score.qualityHandCount} quality`;
+  if (selected.size === 20 && !validation.matchesSelectedDeal) {
+    attemptSummary.textContent = `${baseText}. Attempt cards do not match the selected deal yet.`;
+    attemptSummary.classList.add("is-warning");
+    return;
+  }
+
+  if (selected.size !== 20) {
+    attemptSummary.textContent = `${baseText}. Use these cards as the deal or select the same 20 cards above.`;
+    attemptSummary.classList.add("is-good");
+    return;
+  }
+
+  const bestScore = latestResult?.best?.score ?? null;
+  if (!bestScore) {
+    attemptSummary.textContent = `${baseText}. This will seed the next search as a lower bound.`;
+    attemptSummary.classList.add("is-good");
+    return;
+  }
+
+  const diff = bestScore.total - validation.score.total;
+  if (diff > 0) {
+    const higherSolutions = (latestResult.solutions ?? []).filter((solution) => solution.score.total > validation.score.total);
+    const higherOutcomes = new Set(higherSolutions.map(solutionOutcomeKey)).size;
+    attemptSummary.textContent = `${baseText}. Best found is +${money(diff)} higher across ${higherOutcomes} found outcome${higherOutcomes === 1 ? "" : "s"}.`;
+    attemptSummary.classList.add("is-warning");
+    return;
+  }
+
+  if (diff === 0) {
+    attemptSummary.textContent = `${baseText}. This matches the best found score.`;
+    attemptSummary.classList.add("is-good");
+    return;
+  }
+
+  attemptSummary.textContent = `${baseText}. Attempt is above the current saved/search result and will be kept as the floor.`;
+  attemptSummary.classList.add("is-good");
+}
+
+function handleAttemptSlotChange(event) {
+  const select = event.target.closest("select[data-attempt-zone]");
+  if (!select) return;
+  const index = Number(select.dataset.attemptIndex);
+  if (select.dataset.attemptZone === "grid") {
+    attemptGridCards[index] = select.value;
+  } else {
+    attemptDiscardCards[index] = select.value;
+  }
+  renderAttemptEditor();
+}
+
+function handleAttemptScreenshotChange() {
+  if (attemptPreviewUrl) {
+    URL.revokeObjectURL(attemptPreviewUrl);
+    attemptPreviewUrl = null;
+  }
+
+  const file = attemptScreenshot.files?.[0];
+  if (!file) {
+    attemptPreview.hidden = true;
+    attemptPreview.removeAttribute("src");
+    return;
+  }
+
+  attemptPreviewUrl = URL.createObjectURL(file);
+  attemptPreview.src = attemptPreviewUrl;
+  attemptPreview.hidden = false;
+}
+
+function clearAttempt() {
+  attemptGridCards.fill("");
+  attemptDiscardCards.fill("");
+  if (attemptPreviewUrl) {
+    URL.revokeObjectURL(attemptPreviewUrl);
+    attemptPreviewUrl = null;
+  }
+  attemptScreenshot.value = "";
+  attemptPreview.hidden = true;
+  attemptPreview.removeAttribute("src");
+  renderAttemptEditor();
+}
+
+function useAttemptCardsAsDeal() {
+  const validation = attemptValidation();
+  if (!validation.valid) return;
+  selected.clear();
+  validation.cards.forEach((cardId) => selected.add(cardId));
+  latestResult = null;
+  activeSolutionIndex = 0;
+  resetOptimizerTimer();
+  renderSelectionState();
+  renderEmptyResult();
 }
 
 function renderOptimizerTimer() {
@@ -561,6 +780,52 @@ function mergeBestKnownIntoResult(result, record) {
   };
 }
 
+function mergeAttemptIntoResult(result, attemptSolution) {
+  if (!attemptSolution) return result;
+
+  if (!result?.best) {
+    return {
+      best: attemptSolution,
+      solutions: [attemptSolution],
+      bestByHandCount: bucketSummariesForBest(attemptSolution, false, false),
+      attempts: 0,
+      elapsedMs: 0,
+      candidateCount: 0,
+      incumbentTotal: attemptSolution.score.total,
+      searchOrder: "player attempt lower bound",
+      usedAttemptLowerBound: true,
+    };
+  }
+
+  const existingSolutions = result.solutions ?? [];
+  const mergedSolutions = uniqueSolutionsByPlacement(
+    [attemptSolution, ...existingSolutions].sort((a, b) => compareScores(b.score, a.score)),
+  );
+
+  const bestByHandCount = result.bestByHandCount.map((bucket) => {
+    if (bucket.handCount !== attemptSolution.score.handCount) return bucket;
+    if (bucket.total !== null && bucket.total >= attemptSolution.score.total) return bucket;
+    return {
+      handCount: bucket.handCount,
+      total: attemptSolution.score.total,
+      base: attemptSolution.score.base,
+      qualityHandCount: attemptSolution.score.qualityHandCount,
+      source: attemptSolution.source,
+      upperBound: bucket.upperBound,
+      status: "found",
+    };
+  });
+
+  return {
+    ...result,
+    best: mergedSolutions[0],
+    solutions: mergedSolutions.slice(0, 24),
+    bestByHandCount,
+    incumbentTotal: Math.max(result.incumbentTotal ?? 0, attemptSolution.score.total),
+    usedAttemptLowerBound: compareScores(attemptSolution.score, result.best.score) > 0,
+  };
+}
+
 function mergeSolverResults(primary, exactHigh) {
   if (!exactHigh?.best) return primary;
 
@@ -672,6 +937,108 @@ function resetExactWorker() {
   exactWorker = null;
 }
 
+function getHeuristicWorker() {
+  if (heuristicWorkerUnavailable || typeof Worker === "undefined") return null;
+  if (heuristicWorker) return heuristicWorker;
+
+  try {
+    heuristicWorker = new Worker(new URL("./heuristicSolverWorker.js?v=solver-fast-1", import.meta.url), { type: "module" });
+  } catch {
+    heuristicWorkerUnavailable = true;
+    heuristicWorker = null;
+  }
+
+  return heuristicWorker;
+}
+
+function resetHeuristicWorker() {
+  if (heuristicWorker) {
+    heuristicWorker.terminate();
+  }
+  heuristicWorker = null;
+}
+
+async function solveFantasylandHeuristicInWorker(cardIds, options) {
+  const worker = getHeuristicWorker();
+  if (!worker) return { status: "unavailable" };
+
+  const id = String((heuristicWorkerRequestId += 1));
+  const timeoutMs = Math.max(1500, Number(options.timeLimitMs ?? 0) + 1500);
+
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const cleanup = () => {
+      window.clearTimeout(timeoutId);
+      worker.removeEventListener("message", handleMessage);
+      worker.removeEventListener("error", handleError);
+      worker.removeEventListener("messageerror", handleError);
+    };
+
+    const finish = (response) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(response);
+    };
+
+    const failAndReset = (status) => {
+      if (settled) return;
+      if (status === "failed") heuristicWorkerUnavailable = true;
+      resetHeuristicWorker();
+      finish({ status });
+    };
+
+    const handleMessage = (event) => {
+      const message = event.data ?? {};
+      if (message.id !== id) return;
+      if (message.ok) {
+        finish({ status: "ok", result: message.payload });
+      } else {
+        failAndReset("failed");
+      }
+    };
+
+    const handleError = () => failAndReset("failed");
+    const timeoutId = window.setTimeout(() => failAndReset("timed-out"), timeoutMs);
+
+    worker.addEventListener("message", handleMessage);
+    worker.addEventListener("error", handleError);
+    worker.addEventListener("messageerror", handleError);
+
+    try {
+      worker.postMessage({
+        id,
+        type: "solve-heuristic",
+        payload: {
+          cardIds,
+          options,
+        },
+      });
+    } catch {
+      failAndReset("failed");
+    }
+  });
+}
+
+async function solveFantasylandHeuristicResponsive(cardIds, options) {
+  const workerResponse = await solveFantasylandHeuristicInWorker(cardIds, options);
+  if (workerResponse.status === "ok") return workerResponse.result;
+
+  const fallbackBudget = Math.min(Number(options.timeLimitMs ?? 0), 2500);
+  const result = solveFantasylandHeuristic(cardIds, {
+    ...options,
+    timeLimitMs: fallbackBudget,
+    maxSolutions: Math.min(Number(options.maxSolutions ?? 12), 12),
+    fastMode: true,
+  });
+  return {
+    ...result,
+    workerFallback: workerResponse.status,
+    searchOrder: `${result.searchOrder} Engine: short main-thread fallback because the heuristic worker was ${workerResponse.status}.`,
+  };
+}
+
 async function solveFantasylandExactInWorker(cardIds, options) {
   const worker = getExactWorker();
   if (!worker) return { status: "unavailable" };
@@ -739,6 +1106,7 @@ async function solveFantasylandExactInWorker(cardIds, options) {
 async function solveFantasylandExactBucket(cardIds, options) {
   const workerResponse = await solveFantasylandExactInWorker(cardIds, options);
   if (workerResponse.status === "ok") return workerResponse.result;
+  if (!options.allowSynchronousFallback) return null;
   if (workerResponse.status === "timed-out") return null;
 
   return solveFantasylandExactHighBuckets(cardIds, options);
@@ -1382,6 +1750,7 @@ function renderSelectionState() {
   renderDeck();
   renderBestKnownPanel();
   renderProofPanel();
+  renderAttemptEditor();
 }
 
 function toggleCard(cardId) {
@@ -1429,6 +1798,7 @@ function renderEmptyResult() {
   bucketList.innerHTML = "";
   renderBestKnownPanel();
   renderProofPanel();
+  renderAttemptSummary();
 }
 
 function renderBestKnownPanel() {
@@ -1673,6 +2043,7 @@ function renderResult() {
 
   renderBestKnownPanel();
   renderProofPanel();
+  renderAttemptSummary();
 }
 
 async function optimize() {
@@ -1684,9 +2055,14 @@ async function optimize() {
   loadSampleButton.disabled = true;
   clearButton.disabled = true;
   const bestKnown = bestKnownForCurrentDeal();
+  const attemptSolution = currentAttemptSolution({ requireSelectedMatch: true });
+  const lowerBoundTotal = Math.max(bestKnown?.score.total ?? 0, attemptSolution?.score.total ?? 0);
   const proof = exactProofForCurrentDeal();
   const hasCertifiedPlacement =
-    bestKnown && proof?.status === "proven" && proof.bestKnownTotal === bestKnown.score.total;
+    bestKnown &&
+    proof?.status === "proven" &&
+    proof.bestKnownTotal === bestKnown.score.total &&
+    (!attemptSolution || compareScores(bestKnown.score, attemptSolution.score) >= 0);
 
   if (hasCertifiedPlacement) {
     latestResult = resultFromBestKnown(bestKnown, { exact: true });
@@ -1702,21 +2078,29 @@ async function optimize() {
 
   const timeBudget = Number(searchDepth.value);
   startOptimizerTimer(timeBudget, "Starting");
-  statusLine.textContent = bestKnown
-    ? `Optimizing from saved lower bound. ${searchBudgetLabel()}.`
+  const lowerBoundLabel = attemptSolution
+    ? `player attempt ${money(attemptSolution.score.total)}`
+    : bestKnown
+      ? `saved lower bound ${money(bestKnown.score.total)}`
+      : null;
+  statusLine.textContent = lowerBoundLabel
+    ? `Optimizing from ${lowerBoundLabel}. ${searchBudgetLabel()}.`
     : `Optimizing. ${searchBudgetLabel()}.`;
 
   await new Promise((resolve) => window.setTimeout(resolve, 30));
 
   try {
-    const heuristicBudget = Math.max(750, Math.floor(timeBudget * 0.6));
+    const heuristicBudget = Math.max(750, Math.floor(timeBudget * 0.8));
     const exactBudget = Math.max(0, timeBudget - heuristicBudget);
     setOptimizerTimerPhase("Heuristic search");
-    latestResult = solveFantasylandHeuristic(selectedCards(), {
+    latestResult = await solveFantasylandHeuristicResponsive(selectedCards(), {
       timeLimitMs: heuristicBudget,
-      maxSolutions: 24,
-      incumbentTotal: bestKnown?.score.total ?? 0,
+      maxSolutions: 12,
+      incumbentTotal: lowerBoundTotal,
+      initialPlacements: attemptSolution ? [attemptSolution] : [],
+      fastMode: true,
     });
+    latestResult = mergeAttemptIntoResult(latestResult, attemptSolution);
     latestResult = mergeBestKnownIntoResult(latestResult, bestKnown);
     const exactStartedAt = performance.now();
     setOptimizerTimerPhase("Exact proof");
@@ -1805,8 +2189,12 @@ async function optimize() {
             ? "Best known kept; lower-bucket chunk will retry the current candidate"
           : latestResult.nativeHighProgress
             ? "Best known kept; exact chunk will retry the current candidate"
+          : latestResult.usedAttemptLowerBound
+            ? "Player attempt kept as lower bound"
           : latestResult.usedSavedLowerBound
             ? "Saved lower bound kept"
+          : latestResult.workerFallback
+            ? "Short fallback search; open localhost for full worker search"
             : "Best found, not proven";
     statusLine.textContent = `${resultStatus}: ${money(latestResult.best.score.total)}. Bucket bounds shown below.`;
     renderResult();
@@ -1840,6 +2228,11 @@ optimizeButton.addEventListener("click", optimize);
 clearButton.addEventListener("click", clearSelection);
 loadSampleButton.addEventListener("click", loadSample);
 showBestKnownButton.addEventListener("click", showBestKnownPlacement);
+attemptScreenshot.addEventListener("change", handleAttemptScreenshotChange);
+attemptGridSlots.addEventListener("change", handleAttemptSlotChange);
+attemptDiscardSlots.addEventListener("change", handleAttemptSlotChange);
+useAttemptDealButton.addEventListener("click", useAttemptCardsAsDeal);
+clearAttemptButton.addEventListener("click", clearAttempt);
 
 await loadSeededBestKnown();
 await loadExactProofStatuses();

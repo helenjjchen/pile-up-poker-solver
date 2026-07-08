@@ -401,9 +401,51 @@ assert.equal(knownHighHeuristic.best.score.total >= knownHighScore.total, true);
 assert.equal(knownHighStructures.has(canonicalScoreStructureKey(knownHighGrid, knownHighDiscard)), true);
 assert.equal(knownHighStructures.has(canonicalScoreStructureKey(alternateKnownHighGrid, knownHighDiscard)), true);
 
+const screenshotAttemptGrid = [
+  "JH",
+  "9C",
+  "8D",
+  "10D",
+  "KH",
+  "6C",
+  "KD",
+  "JS",
+  "6H",
+  "8S",
+  "7D",
+  "9S",
+  "9H",
+  "7S",
+  "6D",
+  "8H",
+];
+const screenshotAttemptDiscard = ["JC", "QD", "KS", "AC"];
+const screenshotAttemptScore = scorePlacement(screenshotAttemptGrid, screenshotAttemptDiscard);
+const screenshotAttemptDeal = sortCardIds([...screenshotAttemptGrid, ...screenshotAttemptDiscard]);
+assert.equal(screenshotAttemptScore.total, 11790);
+const seededScreenshotHeuristic = solveFantasylandHeuristic(screenshotAttemptDeal, {
+  timeLimitMs: 500,
+  maxSolutions: 8,
+  fastMode: true,
+  incumbentTotal: screenshotAttemptScore.total,
+  initialPlacements: [
+    {
+      grid: screenshotAttemptGrid,
+      discard: screenshotAttemptDiscard,
+      score: screenshotAttemptScore,
+    },
+  ],
+});
+assert.equal(seededScreenshotHeuristic.best.score.total >= screenshotAttemptScore.total, true);
+assert.equal(
+  seededScreenshotHeuristic.solutions.some((solution) => solution.score.total >= screenshotAttemptScore.total),
+  true,
+);
+
 [
   SAMPLE_FANTASYLAND_DEAL,
   knownHighDeal,
+  screenshotAttemptDeal,
   [
     "6H",
     "6S",

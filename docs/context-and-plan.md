@@ -89,18 +89,31 @@ Objective:
 maximize score(grid, discard)
 ```
 
+Product goal:
+
+- Show the best possible card placement the solver can find for a Fantasyland deal, maximizing dollars first.
+- Prioritize high total hand count and high quality-hand count because they drive multipliers and hand value.
+- Surface genuinely different scoring structures that tie on total, hand count, and quality count, but do not spend large amounts of runtime collecting every symmetric/equivalent placement.
+- When a player provides their own current attempt, score it immediately, use it as a lower bound/search seed, and compare the solver's best found result against that floor.
+
 Equivalent placements:
 
 - Board rotations and reflections preserve row/column/corner scoring.
 - Discard card order is irrelevant.
 - Store a canonical placement key across the full 32 scoring-preserving board transforms plus sorted discard cards so equivalent placements can be folded together. The transform group includes transpose plus independent swaps of edge rows, inner rows, edge columns, and inner columns.
+- Fold suit-only differences when suits do not affect the scoring hand.
+- Fold irrelevant kickers for pair, two pair, trips, and quads; the scoring rank structure matters, not the unused kicker ranks.
+- Do not fold materially different hand-type mixes that tie on total, hand count, and quality count. Example: a tied result with `5 straight flushes · 3 trips · 1 flush · 1 two pair` is a different scoring way from `5 straight flushes · 1 straight · 2 trips · 1 flush · 1 pair`.
 
-V0 implementation target:
+V1 implementation target:
 
 - Exact hand scoring and score breakdown.
 - Card picker for the 36-card deck.
 - Fantasyland optimizer over a 20-card input.
 - Display the best placement found plus distinct tied or near-tied placements.
+- Explain which symmetries/equivalences are folded out of the distinct scoring-way UI.
+- Let a player upload a screenshot reference and manually enter the visible grid/discard attempt for v1. This is intentionally reliable manual transcription first; OCR/card detection can layer on later.
+- Compare the player attempt against the solver's best found result and never report a solver result below a valid attempt for the selected deal.
 - Show score, winnings before multiplier, multiplier, hand count, quality hand count, and line breakdown.
 - Search 10-hand starts first, then 9-hand starts, then lower hand-count starts, and report best-found score by hand-count bucket.
 - Persist best-known placements by canonical/equivalent 20-card deal key. Seed known records from `data/best-known-fantasyland.json`; update browser-local records when a search finds a better score, and reuse the strongest saved lower bound for equivalent deals by translating the placement onto the selected cards.
