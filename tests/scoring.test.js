@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { canonicalDealKey, translatePlacementToDeal } from "../src/cards.js";
 import { solveFantasylandExactHighBuckets } from "../src/exactHighBucketSolver.js";
+import { canonicalScoreStructureKey, solutionPlacementKey, uniqueSolutionsByPlacement } from "../src/layoutEquivalence.js";
 import { scoreHand, scorePlacement, theoreticalMaxTotalForHandCount } from "../src/scoring.js";
 import { BOARD_TRANSFORMS, canonicalPlacementKey } from "../src/symmetry.js";
 
@@ -55,6 +56,99 @@ for (let col = 0; col < 4; col += 1) {
 }
 assert.equal(canonicalPlacementKey(screenshotGrid, screenshotDiscard), canonicalPlacementKey(interiorRowSwapGrid, screenshotDiscard));
 assert.equal(scorePlacement(interiorRowSwapGrid, screenshotDiscard).total, screenshotScore.total);
+
+const straightFlushRowsGrid = [
+  "JC",
+  "QC",
+  "KC",
+  "AC",
+  "JD",
+  "QD",
+  "KD",
+  "AD",
+  "JH",
+  "QH",
+  "KH",
+  "AH",
+  "JS",
+  "QS",
+  "KS",
+  "AS",
+];
+const straightFlushRowsDiscard = ["7S", "8S", "9S", "10S"];
+const fourKindRowsGrid = [
+  "AD",
+  "AC",
+  "AS",
+  "AH",
+  "KD",
+  "KC",
+  "KS",
+  "KH",
+  "QD",
+  "QC",
+  "QS",
+  "QH",
+  "JD",
+  "JC",
+  "JS",
+  "JH",
+];
+const fourKindRowsDiscard = ["10S", "9S", "8S", "7S"];
+assert.equal(scorePlacement(straightFlushRowsGrid, straightFlushRowsDiscard).total, 27420);
+assert.equal(scorePlacement(fourKindRowsGrid, fourKindRowsDiscard).total, 27420);
+assert.notEqual(
+  canonicalPlacementKey(straightFlushRowsGrid, straightFlushRowsDiscard),
+  canonicalPlacementKey(fourKindRowsGrid, fourKindRowsDiscard),
+);
+assert.equal(
+  canonicalScoreStructureKey(straightFlushRowsGrid, straightFlushRowsDiscard),
+  canonicalScoreStructureKey(fourKindRowsGrid, fourKindRowsDiscard),
+);
+assert.equal(
+  solutionPlacementKey({
+    grid: straightFlushRowsGrid,
+    discard: straightFlushRowsDiscard,
+    key: "browser-local-copy",
+  }),
+  solutionPlacementKey({
+    grid: straightFlushRowsGrid,
+    discard: straightFlushRowsDiscard,
+    key: "baseline-copy",
+  }),
+);
+assert.equal(
+  uniqueSolutionsByPlacement([
+    { grid: straightFlushRowsGrid, discard: straightFlushRowsDiscard, key: "browser-local-copy" },
+    { grid: straightFlushRowsGrid, discard: straightFlushRowsDiscard, key: "baseline-copy" },
+  ]).length,
+  1,
+);
+
+const lowRankStraightFlushRowsGrid = [
+  "7C",
+  "8C",
+  "9C",
+  "10C",
+  "7D",
+  "8D",
+  "9D",
+  "10D",
+  "7H",
+  "8H",
+  "9H",
+  "10H",
+  "7S",
+  "8S",
+  "9S",
+  "10S",
+];
+const lowRankStraightFlushRowsDiscard = ["JS", "QS", "KS", "AS"];
+assert.equal(scorePlacement(lowRankStraightFlushRowsGrid, lowRankStraightFlushRowsDiscard).total, 27420);
+assert.notEqual(
+  canonicalScoreStructureKey(straightFlushRowsGrid, straightFlushRowsDiscard),
+  canonicalScoreStructureKey(lowRankStraightFlushRowsGrid, lowRankStraightFlushRowsDiscard),
+);
 
 const shiftedLowRun = [
   "6H",

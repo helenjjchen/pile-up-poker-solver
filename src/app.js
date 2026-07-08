@@ -10,6 +10,7 @@ import {
 } from "./cards.js";
 import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=exact-cache-7";
 import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=exact-cache-7";
+import { solutionStructureKey, uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-1";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
 
 const selected = new Set();
@@ -533,9 +534,9 @@ function mergeBestKnownIntoResult(result, record) {
     key: `best-known-${record.dealKey}`,
   };
   const existingSolutions = result.solutions ?? [];
-  const mergedSolutions = [savedSolution, ...existingSolutions]
-    .sort((a, b) => compareScores(b.score, a.score))
-    .filter((solution, index, solutions) => solutions.findIndex((item) => item.key === solution.key) === index);
+  const mergedSolutions = uniqueSolutionsByPlacement(
+    [savedSolution, ...existingSolutions].sort((a, b) => compareScores(b.score, a.score)),
+  );
 
   const bestByHandCount = result.bestByHandCount.map((bucket) => {
     if (bucket.handCount !== savedSolution.score.handCount) return bucket;
@@ -563,9 +564,9 @@ function mergeBestKnownIntoResult(result, record) {
 function mergeSolverResults(primary, exactHigh) {
   if (!exactHigh?.best) return primary;
 
-  const mergedSolutions = [...(primary.solutions ?? []), ...(exactHigh.solutions ?? [])]
-    .sort((a, b) => compareScores(b.score, a.score))
-    .filter((solution, index, solutions) => solutions.findIndex((item) => item.key === solution.key) === index);
+  const mergedSolutions = uniqueSolutionsByPlacement(
+    [...(primary.solutions ?? []), ...(exactHigh.solutions ?? [])].sort((a, b) => compareScores(b.score, a.score)),
+  );
 
   const bucketByHandCount = new Map((primary.bestByHandCount ?? []).map((bucket) => [bucket.handCount, bucket]));
   for (const bucket of exactHigh.bestByHandCount ?? []) {
@@ -647,10 +648,7 @@ function bucketSummariesForBest(best, exhausted, provenOptimal) {
 }
 
 function uniqueSortedSolutions(solutions) {
-  return solutions
-    .filter(Boolean)
-    .sort((a, b) => compareScores(b.score, a.score))
-    .filter((solution, index, allSolutions) => allSolutions.findIndex((item) => item.key === solution.key) === index);
+  return uniqueSolutionsByPlacement(solutions.filter(Boolean).sort((a, b) => compareScores(b.score, a.score)));
 }
 
 function getExactWorker() {
@@ -1481,25 +1479,6 @@ function activeSolution() {
   return latestResult?.solutions?.[activeSolutionIndex] ?? latestResult?.best ?? null;
 }
 
-function solutionStructureKey(solution) {
-  const score = solution.score;
-  const lineParts = score.lines.map((line) =>
-    [line.key, line.scores ? 1 : 0, line.hand.key, line.value].join(":"),
-  );
-  return [
-    score.total,
-    score.base,
-    score.handCount,
-    score.multiplier,
-    score.qualityHandCount,
-    ...lineParts,
-    "discard",
-    score.discardScores ? 1 : 0,
-    score.discardHand.key,
-    score.discardValue,
-  ].join("|");
-}
-
 function groupedSolutions() {
   const groups = [];
   const byKey = new Map();
@@ -1540,7 +1519,7 @@ function renderSolutionGroups() {
     button.title =
       group.solutions.length === 1
         ? "Show this canonical layout"
-        : "Show the first score-equivalent canonical layout. Rotations/reflections and scoring-preserving row/column swaps are already folded together.";
+        : "Show the first score/rank-equivalent canonical layout. Board symmetries and suit-insensitive hand signatures are already folded together.";
     button.innerHTML = `${money(group.representative.score.total)}<span>${group.representative.score.handCount} hands · ${group.representative.score.qualityHandCount} quality · ${group.solutions.length} ${group.solutions.length === 1 ? "layout" : "equivalent layouts"}</span>`;
     button.addEventListener("click", () => {
       activeSolutionIndex = group.indexes[0];
@@ -1556,7 +1535,7 @@ function renderSolutionGroups() {
       const summary = document.createElement("summary");
       summary.textContent = `${group.solutions.length} layouts`;
       summary.title =
-        "Distinct canonical layouts with the same visible score breakdown. Board symmetries are already excluded.";
+        "Distinct canonical placements with the same score/rank structure. Board symmetries and suit-insensitive hand signatures are already excluded.";
       details.append(summary);
 
       const variantList = document.createElement("div");
