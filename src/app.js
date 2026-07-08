@@ -8,9 +8,9 @@ import {
   sortCardIds,
   translatePlacementToDeal,
 } from "./cards.js";
-import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=exact-cache-7";
-import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=exact-cache-7";
-import { solutionStructureKey, uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-1";
+import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=solver-equivalence-3";
+import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-equivalence-2";
+import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
 
 const selected = new Set();
@@ -79,8 +79,8 @@ function selectedCards() {
 function searchBudgetLabel() {
   const seconds = Math.round(Number(searchDepth.value) / 1000);
   const selectedOption = searchDepth.selectedOptions?.[0]?.textContent?.split("·")[0]?.trim() ?? "Search";
-  const heuristicSeconds = Math.round((Math.max(750, Math.floor(Number(searchDepth.value) * 0.45)) / 1000) * 10) / 10;
-  const exactSeconds = Math.round(((Number(searchDepth.value) - Math.max(750, Math.floor(Number(searchDepth.value) * 0.45))) / 1000) * 10) / 10;
+  const heuristicSeconds = Math.round((Math.max(750, Math.floor(Number(searchDepth.value) * 0.6)) / 1000) * 10) / 10;
+  const exactSeconds = Math.round(((Number(searchDepth.value) - Math.max(750, Math.floor(Number(searchDepth.value) * 0.6))) / 1000) * 10) / 10;
   return `${selectedOption}: ${seconds}s total (${heuristicSeconds}s search + ${exactSeconds}s proof)`;
 }
 
@@ -656,7 +656,7 @@ function getExactWorker() {
   if (exactWorker) return exactWorker;
 
   try {
-    exactWorker = new Worker(new URL("./exactSolverWorker.js", import.meta.url), { type: "module" });
+    exactWorker = new Worker(new URL("./exactSolverWorker.js?v=solver-equivalence-3", import.meta.url), { type: "module" });
   } catch {
     exactWorkerUnavailable = true;
     exactWorker = null;
@@ -1479,12 +1479,56 @@ function activeSolution() {
   return latestResult?.solutions?.[activeSolutionIndex] ?? latestResult?.best ?? null;
 }
 
+function solutionOutcomeKey(solution) {
+  const score = solution.score;
+  return [score.total, score.handCount, score.qualityHandCount].join("|");
+}
+
+const SCORING_HAND_ORDER = [
+  ["straight-flush", "straight flush", "straight flushes"],
+  ["four-kind", "quad", "quads"],
+  ["straight", "straight", "straights"],
+  ["three-kind", "trip", "trips"],
+  ["flush", "flush", "flushes"],
+  ["two-pair", "two pair", "two pairs"],
+  ["pair", "pair", "pairs"],
+];
+
+function scoringHandCounts(solution) {
+  const counts = new Map();
+  const addHand = (hand) => {
+    if (!hand || hand.base <= 0) return;
+    counts.set(hand.key, (counts.get(hand.key) ?? 0) + 1);
+  };
+
+  solution.score.lines.forEach((line) => {
+    if (line.scores) addHand(line.hand);
+  });
+  if (solution.score.discardScores) addHand(solution.score.discardHand);
+
+  return counts;
+}
+
+function solutionHandProfileKey(solution) {
+  const counts = scoringHandCounts(solution);
+  return SCORING_HAND_ORDER.map(([key]) => counts.get(key) ?? 0).join("|");
+}
+
+function scoringHandSummary(solution) {
+  const counts = scoringHandCounts(solution);
+  return SCORING_HAND_ORDER.flatMap(([key, singular, plural]) => {
+    const count = counts.get(key) ?? 0;
+    if (!count) return [];
+    return `${count} ${count === 1 ? singular : plural}`;
+  }).join(" · ");
+}
+
 function groupedSolutions() {
   const groups = [];
   const byKey = new Map();
 
   (latestResult?.solutions ?? []).forEach((solution, index) => {
-    const key = solutionStructureKey(solution);
+    const key = solutionOutcomeKey(solution);
     let group = byKey.get(key);
     if (!group) {
       group = {
@@ -1492,12 +1536,30 @@ function groupedSolutions() {
         representative: solution,
         indexes: [],
         solutions: [],
+        variants: [],
+        variantsByKey: new Map(),
       };
       byKey.set(key, group);
       groups.push(group);
     }
+
+    const profileKey = solutionHandProfileKey(solution);
+    let variant = group.variantsByKey.get(profileKey);
+    if (!variant) {
+      variant = {
+        key: profileKey,
+        representative: solution,
+        indexes: [],
+        solutions: [],
+      };
+      group.variantsByKey.set(profileKey, variant);
+      group.variants.push(variant);
+    }
+
     group.indexes.push(index);
     group.solutions.push(solution);
+    variant.indexes.push(index);
+    variant.solutions.push(solution);
   });
 
   return groups;
@@ -1505,11 +1567,13 @@ function groupedSolutions() {
 
 function renderSolutionGroups() {
   const groups = groupedSolutions().slice(0, 12);
-  solutionsRow.classList.toggle("has-layout-drawer", groups.some((group) => group.solutions.length > 1));
+  solutionsRow.classList.toggle("has-layout-drawer", groups.some((group) => group.variants.length > 1));
   solutionsRow.innerHTML = "";
 
   groups.forEach((group) => {
     const activeInGroup = group.indexes.includes(activeSolutionIndex);
+    const activeVariant = group.variants.find((variant) => variant.indexes.includes(activeSolutionIndex));
+    const wayCount = group.variants.length;
     const groupElement = document.createElement("div");
     groupElement.className = `solution-group${activeInGroup ? " is-active" : ""}`;
 
@@ -1517,35 +1581,36 @@ function renderSolutionGroups() {
     button.type = "button";
     button.className = "solution-pill";
     button.title =
-      group.solutions.length === 1
-        ? "Show this canonical layout"
-        : "Show the first score/rank-equivalent canonical layout. Board symmetries and suit-insensitive hand signatures are already folded together.";
-    button.innerHTML = `${money(group.representative.score.total)}<span>${group.representative.score.handCount} hands · ${group.representative.score.qualityHandCount} quality · ${group.solutions.length} ${group.solutions.length === 1 ? "layout" : "equivalent layouts"}</span>`;
+      wayCount === 1
+        ? "Show this scoring way"
+        : "Show the first scoring way for this tied outcome.";
+    button.innerHTML = `${money(group.representative.score.total)}<span>${group.representative.score.handCount} hands · ${group.representative.score.qualityHandCount} quality · ${wayCount} ${wayCount === 1 ? "way" : "ways"}</span>`;
     button.addEventListener("click", () => {
-      activeSolutionIndex = group.indexes[0];
+      activeSolutionIndex = activeVariant?.indexes[0] ?? group.indexes[0];
       renderResult();
     });
     groupElement.append(button);
 
-    if (group.solutions.length > 1) {
+    if (wayCount > 1) {
       const details = document.createElement("details");
       details.className = "variant-details";
       if (activeInGroup) details.open = true;
 
       const summary = document.createElement("summary");
-      summary.textContent = `${group.solutions.length} layouts`;
+      summary.textContent = `${wayCount} scoring ways`;
       summary.title =
-        "Distinct canonical placements with the same score/rank structure. Board symmetries and suit-insensitive hand signatures are already excluded.";
+        "Different scoring structures with the same total, hand count, and quality count.";
       details.append(summary);
 
       const variantList = document.createElement("div");
       variantList.className = "variant-list";
-      group.solutions.forEach((solution, variantIndex) => {
-        const solutionIndex = group.indexes[variantIndex];
+      group.variants.forEach((variant, variantIndex) => {
+        const solution = variant.representative;
+        const solutionIndex = variant.indexes[0];
         const variantButton = document.createElement("button");
         variantButton.type = "button";
-        variantButton.className = `variant-button${solutionIndex === activeSolutionIndex ? " is-active" : ""}`;
-        variantButton.innerHTML = `Layout ${variantIndex + 1}<span>${solution.source ?? "placement"}</span>`;
+        variantButton.className = `variant-button${variant.indexes.includes(activeSolutionIndex) ? " is-active" : ""}`;
+        variantButton.textContent = scoringHandSummary(solution);
         variantButton.addEventListener("click", () => {
           activeSolutionIndex = solutionIndex;
           renderResult();
@@ -1644,7 +1709,7 @@ async function optimize() {
   await new Promise((resolve) => window.setTimeout(resolve, 30));
 
   try {
-    const heuristicBudget = Math.max(750, Math.floor(timeBudget * 0.45));
+    const heuristicBudget = Math.max(750, Math.floor(timeBudget * 0.6));
     const exactBudget = Math.max(0, timeBudget - heuristicBudget);
     setOptimizerTimerPhase("Heuristic search");
     latestResult = solveFantasylandHeuristic(selectedCards(), {

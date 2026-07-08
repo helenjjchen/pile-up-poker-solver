@@ -1,4 +1,4 @@
-import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js";
+import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=solver-equivalence-3";
 
 let wasmSolver = null;
 let wasmLoadAttempted = false;

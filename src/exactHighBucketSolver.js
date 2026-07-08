@@ -5,6 +5,7 @@ import {
   scorePlacement,
   theoreticalMaxTotalForHandCount,
 } from "./scoring.js";
+import { solutionStructureKey } from "./layoutEquivalence.js";
 import { canonicalPlacementKey } from "./symmetry.js";
 
 const MASK_COUNT = 1 << 20;
@@ -114,10 +115,16 @@ function scoreFromParts(gridBase, gridHandCount, discardBonus = 0) {
 
 function addSolution(solutions, placement) {
   if (!placement) return;
-  const key = canonicalPlacementKey(placement.grid, placement.discard);
-  const existing = solutions.get(key);
+  const placementKey = canonicalPlacementKey(placement.grid, placement.discard);
+  const solution = {
+    ...placement,
+    key: placementKey,
+    placementKey,
+  };
+  const structureKey = solutionStructureKey(solution);
+  const existing = solutions.get(structureKey);
   if (!existing || compareScores(placement.score, existing.score) > 0) {
-    solutions.set(key, { ...placement, key });
+    solutions.set(structureKey, { ...solution, structureKey });
   }
 }
 
@@ -279,7 +286,7 @@ class ExactHighBucketSearch {
     if (gridHandCount > this.maxGridHandCount) return;
     const gridBase = rowValue + colValue + corner.value * 2;
     const parts = scoreFromParts(gridBase, gridHandCount, discardBonus);
-    if (parts.total <= this.best.total) return;
+    if (parts.total < this.best.total) return;
 
     const discard = indexesFromMask(discardMask).map((index) => this.cardIds[index]);
     const grid = this.materializeGrid(this.rowMasks, this.colMasks, corner);
@@ -292,14 +299,16 @@ class ExactHighBucketSearch {
       score,
       source: this.sourceLabel,
     };
-    this.best = {
-      total: score.total,
-      base: score.base,
-      handCount: score.handCount,
-      gridHandCount: score.gridHandCount,
-      placement,
-    };
     addSolution(this.solutionMap, placement);
+    if (score.total > this.best.total || !this.best.placement || compareScores(score, this.best.placement.score) > 0) {
+      this.best = {
+        total: score.total,
+        base: score.base,
+        handCount: score.handCount,
+        gridHandCount: score.gridHandCount,
+        placement,
+      };
+    }
   }
 
   evaluateColumnsByPermutation(rowValue, discardBonus, discardMask, rowHandCount) {
@@ -330,7 +339,7 @@ class ExactHighBucketSearch {
       Math.min(optimisticGridHandCount, this.maxGridHandCount),
       discardBonus,
     ).total;
-    if (optimisticTotal <= this.best.total) return;
+    if (optimisticTotal < this.best.total) return;
 
     for (const p1 of PERMUTATIONS_4) {
       if (this.overTime()) return;
@@ -365,7 +374,7 @@ class ExactHighBucketSearch {
             Math.min(upperGridHandCount, this.maxGridHandCount),
             discardBonus,
           ).total;
-          if (candidateUpper <= this.best.total) continue;
+          if (candidateUpper < this.best.total) continue;
 
           const corner = this.bestCornerForCells(cells, baseGridHandCount < this.maxGridHandCount);
           if (!corner) continue;
@@ -394,7 +403,7 @@ class ExactHighBucketSearch {
       Math.min(optimisticGridHandCount, this.maxGridHandCount),
       discardBonus,
     ).total;
-    if (optimisticTotal <= this.best.total) return;
+    if (optimisticTotal < this.best.total) return;
 
     for (const candidate of candidates) {
       this.rowMasks[depth] = candidate;
@@ -423,7 +432,7 @@ class ExactHighBucketSearch {
       Math.min(optimisticGridHandCount, this.maxGridHandCount),
       discardBonus,
     ).total;
-    if (optimisticTotal <= this.best.total) return;
+    if (optimisticTotal < this.best.total) return;
 
     for (const candidate of candidates) {
       this.rowMasks[depth] = candidate;
@@ -472,7 +481,7 @@ class ExactHighBucketSearch {
         this.maxGridHandCount,
         nextRowHandCount + this.maxColumnHandCount + 1,
       );
-      if (scoreFromParts(optimisticGridBase, optimisticGridHandCount, discardBonus).total <= this.best.total) return;
+      if (scoreFromParts(optimisticGridBase, optimisticGridHandCount, discardBonus).total < this.best.total) return;
       this.searchLowRows(remaining ^ candidate, depth + 1, rowValue + value, nextRowHandCount, discardBonus, discardMask);
     });
   }
@@ -487,7 +496,7 @@ class ExactHighBucketSearch {
         const absoluteGridUpper = 450 * 8 + 900;
         const absoluteGridHandCount = Math.min(9, this.maxGridHandCount);
         const absoluteTotalUpper = scoreFromParts(absoluteGridUpper, absoluteGridHandCount, discardBonus).total;
-        if (absoluteTotalUpper <= this.best.total) continue;
+        if (absoluteTotalUpper < this.best.total) continue;
         this.searchRows(board, 0, 0, discardBonus, discard.mask);
       }
       this.exhaustedFourRowSearch =
@@ -505,7 +514,7 @@ class ExactHighBucketSearch {
         const board = ALL_MASK_20 ^ discard.mask;
         const absoluteGridUpper = 3 * 450 + 4 * 450 + 900;
         const absoluteTotalUpper = scoreFromParts(absoluteGridUpper, Math.min(8, this.maxGridHandCount), 0).total;
-        if (absoluteTotalUpper <= this.best.total) continue;
+        if (absoluteTotalUpper < this.best.total) continue;
         this.searchOneDeadRow(board, discard.value * 3, discard.mask);
       }
       this.exhaustedThreeRowSearch =
@@ -520,7 +529,7 @@ class ExactHighBucketSearch {
       const absoluteGridUpper = 2 * 450 + this.maxColumnHandCount * 450 + 900;
       const absoluteGridHandCount = Math.min(this.maxGridHandCount, 2 + this.maxColumnHandCount + 1);
       const absoluteTotalUpper = scoreFromParts(absoluteGridUpper, absoluteGridHandCount, 0).total;
-      if (absoluteTotalUpper <= this.best.total) continue;
+      if (absoluteTotalUpper < this.best.total) continue;
       this.searchLowRows(board, 0, 0, 0, discard.value * 3, discard.mask);
     }
     this.exhaustedLowRowSearch =

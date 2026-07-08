@@ -1,5 +1,5 @@
 import { CARD_BY_ID } from "./cards.js";
-import { scorePlacement } from "./scoring.js";
+import { compareScores, scorePlacement } from "./scoring.js";
 import { BOARD_TRANSFORMS, canonicalPlacementKey, transformGrid } from "./symmetry.js";
 
 function handRankSignature(hand) {
@@ -77,4 +77,18 @@ export function uniqueSolutionsByPlacement(solutions) {
     seen.add(key);
     return true;
   });
+}
+
+export function uniqueSolutionsByStructure(solutions) {
+  const byKey = new Map();
+
+  for (const solution of solutions.filter(Boolean)) {
+    const key = solutionStructureKey(solution);
+    const existing = byKey.get(key);
+    if (!existing || compareScores(solution.score, existing.score) > 0) {
+      byKey.set(key, solution);
+    }
+  }
+
+  return [...byKey.values()];
 }

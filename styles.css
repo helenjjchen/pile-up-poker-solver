@@ -619,7 +619,7 @@ h2 {
 }
 
 .solution-group {
-  flex: 0 0 172px;
+  flex: 0 0 186px;
   display: grid;
   grid-template-rows: auto;
   gap: 6px;
@@ -685,7 +685,7 @@ h2 {
   display: block;
   color: var(--muted);
   font-size: 0.66rem;
-  font-weight: 800;
+  font-weight: 850;
 }
 
 .bucket-panel {

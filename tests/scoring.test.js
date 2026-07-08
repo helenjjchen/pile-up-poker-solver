@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
-import { canonicalDealKey, translatePlacementToDeal } from "../src/cards.js";
+import { SAMPLE_FANTASYLAND_DEAL, canonicalDealKey, sortCardIds, translatePlacementToDeal } from "../src/cards.js";
 import { solveFantasylandExactHighBuckets } from "../src/exactHighBucketSolver.js";
-import { canonicalScoreStructureKey, solutionPlacementKey, uniqueSolutionsByPlacement } from "../src/layoutEquivalence.js";
-import { scoreHand, scorePlacement, theoreticalMaxTotalForHandCount } from "../src/scoring.js";
+import { solveFantasylandHeuristic } from "../src/heuristicSolver.js";
+import {
+  canonicalScoreStructureKey,
+  solutionStructureKey,
+  solutionPlacementKey,
+  uniqueSolutionsByPlacement,
+  uniqueSolutionsByStructure,
+} from "../src/layoutEquivalence.js";
+import { compareScores, scoreHand, scorePlacement, theoreticalMaxTotalForHandCount } from "../src/scoring.js";
 import { BOARD_TRANSFORMS, canonicalPlacementKey } from "../src/symmetry.js";
 
 function assertHand(cards, key, base, quality) {
@@ -10,6 +17,43 @@ function assertHand(cards, key, base, quality) {
   assert.equal(hand.key, key);
   assert.equal(hand.base, base);
   assert.equal(hand.quality, quality);
+}
+
+function solutionFor(grid, discard, source = "fixture") {
+  return {
+    grid,
+    discard,
+    score: scorePlacement(grid, discard),
+    source,
+  };
+}
+
+function assertSolutionMatchesDeal(solution, deal) {
+  assert.deepEqual(sortCardIds([...solution.grid, ...solution.discard]), sortCardIds(deal));
+  const score = scorePlacement(solution.grid, solution.discard);
+  assert.equal(solution.score.total, score.total);
+  assert.equal(solution.score.base, score.base);
+  assert.equal(solution.score.handCount, score.handCount);
+  assert.equal(solution.score.qualityHandCount, score.qualityHandCount);
+}
+
+function assertHeuristicResultWellFormed(deal, timeLimitMs = 600) {
+  const result = solveFantasylandHeuristic(deal, { timeLimitMs, maxSolutions: 12 });
+  assert.ok(result.best);
+  assert.equal(result.solutions[0], result.best);
+
+  const seenStructures = new Set();
+  for (let index = 0; index < result.solutions.length; index += 1) {
+    const solution = result.solutions[index];
+    assertSolutionMatchesDeal(solution, deal);
+    if (index > 0) assert.ok(compareScores(result.solutions[index - 1].score, solution.score) >= 0);
+
+    const structureKey = solutionStructureKey(solution);
+    assert.equal(seenStructures.has(structureKey), false);
+    seenStructures.add(structureKey);
+  }
+
+  return result;
 }
 
 assertHand(["8H", "6H", "9H", "7H"], "straight-flush", 450, true);
@@ -194,6 +238,195 @@ assert.equal(
   canonicalScoreStructureKey(kickerSwapGridA, kickerSwapDiscard),
   canonicalScoreStructureKey(kickerSwapGridB, kickerSwapDiscard),
 );
+
+const twoPairSuitGridA = [
+  "JC",
+  "AC",
+  "JS",
+  "AS",
+  "JD",
+  "AD",
+  "JH",
+  "AH",
+  "KC",
+  "KD",
+  "KH",
+  "KS",
+  "QC",
+  "QD",
+  "QH",
+  "QS",
+];
+const twoPairSuitGridB = [
+  "AD",
+  "AH",
+  "JD",
+  "JH",
+  "AC",
+  "AS",
+  "JC",
+  "JS",
+  "KC",
+  "KD",
+  "KH",
+  "KS",
+  "QC",
+  "QD",
+  "QH",
+  "QS",
+];
+const twoPairSuitDiscard = ["7C", "8C", "9C", "10C"];
+assert.equal(scoreHand(["JC", "AC", "JS", "AS"]).key, "two-pair");
+assert.equal(scoreHand(["AD", "AH", "JD", "JH"]).key, "two-pair");
+assert.notEqual(
+  canonicalPlacementKey(twoPairSuitGridA, twoPairSuitDiscard),
+  canonicalPlacementKey(twoPairSuitGridB, twoPairSuitDiscard),
+);
+assert.equal(
+  canonicalScoreStructureKey(twoPairSuitGridA, twoPairSuitDiscard),
+  canonicalScoreStructureKey(twoPairSuitGridB, twoPairSuitDiscard),
+);
+assert.equal(
+  uniqueSolutionsByStructure([
+    solutionFor(twoPairSuitGridA, twoPairSuitDiscard, "two-pair suits A"),
+    solutionFor(twoPairSuitGridB, twoPairSuitDiscard, "two-pair suits B"),
+  ]).length,
+  1,
+);
+
+const twoPairDifferentRankGrid = [
+  "QC",
+  "AC",
+  "QS",
+  "AS",
+  "JD",
+  "AD",
+  "JH",
+  "AH",
+  "KC",
+  "KD",
+  "KH",
+  "KS",
+  "6C",
+  "6D",
+  "6H",
+  "6S",
+];
+assert.equal(scoreHand(["QC", "AC", "QS", "AS"]).key, "two-pair");
+assert.notEqual(
+  canonicalScoreStructureKey(twoPairSuitGridA, twoPairSuitDiscard),
+  canonicalScoreStructureKey(twoPairDifferentRankGrid, twoPairSuitDiscard),
+);
+assert.equal(
+  uniqueSolutionsByStructure([
+    solutionFor(twoPairSuitGridA, twoPairSuitDiscard, "two-pair JA"),
+    solutionFor(twoPairDifferentRankGrid, twoPairSuitDiscard, "two-pair QA"),
+  ]).length,
+  2,
+);
+
+const knownHighDeal = [
+  "7S",
+  "8S",
+  "9S",
+  "10S",
+  "9C",
+  "JC",
+  "KC",
+  "AC",
+  "JH",
+  "QH",
+  "KH",
+  "AH",
+  "JS",
+  "QS",
+  "KS",
+  "AS",
+  "JD",
+  "QD",
+  "KD",
+  "AD",
+];
+const knownHighGrid = [
+  "9S",
+  "7S",
+  "8S",
+  "10S",
+  "JC",
+  "KC",
+  "AC",
+  "9C",
+  "QH",
+  "KH",
+  "AH",
+  "JH",
+  "JS",
+  "KS",
+  "AS",
+  "QS",
+];
+const knownHighDiscard = ["JD", "QD", "KD", "AD"];
+const knownHighScore = scorePlacement(knownHighGrid, knownHighDiscard);
+assert.equal(knownHighScore.total, 24690);
+const alternateKnownHighGrid = [
+  "10S",
+  "8S",
+  "7S",
+  "9S",
+  "JH",
+  "KH",
+  "AH",
+  "QH",
+  "JC",
+  "KC",
+  "AC",
+  "9C",
+  "JS",
+  "KS",
+  "AS",
+  "QS",
+];
+assert.equal(scorePlacement(alternateKnownHighGrid, knownHighDiscard).total, 24690);
+assert.notEqual(
+  canonicalScoreStructureKey(knownHighGrid, knownHighDiscard),
+  canonicalScoreStructureKey(alternateKnownHighGrid, knownHighDiscard),
+);
+const knownHighHeuristic = solveFantasylandHeuristic(knownHighDeal, { timeLimitMs: 7000, maxSolutions: 24 });
+const knownHighStructures = new Set(
+  knownHighHeuristic.solutions
+    .filter((solution) => solution.score.total === 24690)
+    .map((solution) => canonicalScoreStructureKey(solution.grid, solution.discard)),
+);
+assert.equal(knownHighHeuristic.best.score.total >= knownHighScore.total, true);
+assert.equal(knownHighStructures.has(canonicalScoreStructureKey(knownHighGrid, knownHighDiscard)), true);
+assert.equal(knownHighStructures.has(canonicalScoreStructureKey(alternateKnownHighGrid, knownHighDiscard)), true);
+
+[
+  SAMPLE_FANTASYLAND_DEAL,
+  knownHighDeal,
+  [
+    "6H",
+    "6S",
+    "6C",
+    "7H",
+    "7C",
+    "8S",
+    "8C",
+    "8D",
+    "9S",
+    "9D",
+    "10H",
+    "10C",
+    "JH",
+    "JS",
+    "JC",
+    "JD",
+    "QC",
+    "QD",
+    "KD",
+    "AS",
+  ],
+].forEach((deal) => assertHeuristicResultWellFormed(deal));
 
 const shiftedLowRun = [
   "6H",

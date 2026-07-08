@@ -1,4 +1,5 @@
 import { sortCardIds } from "./cards.js";
+import { solutionStructureKey } from "./layoutEquivalence.js";
 import { compareScores, scoreHand, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
 import { canonicalPlacementKey } from "./symmetry.js";
 
@@ -407,15 +408,18 @@ function anneal(initialState, random, iterations, allowedSlots = null, deadlineM
 
 function addSolution(solutions, state, score, source) {
   const placement = stateToPlacement(state);
-  const key = canonicalPlacementKey(placement.grid, placement.discard);
-  const existing = solutions.get(key);
+  const placementKey = canonicalPlacementKey(placement.grid, placement.discard);
+  const solution = {
+    ...placement,
+    score,
+    source,
+    key: placementKey,
+    placementKey,
+  };
+  const structureKey = solutionStructureKey(solution);
+  const existing = solutions.get(structureKey);
   if (!existing || compareScores(score, existing.score) > 0) {
-    solutions.set(key, {
-      ...placement,
-      score,
-      source,
-      key,
-    });
+    solutions.set(structureKey, { ...solution, structureKey });
   }
 }
 
