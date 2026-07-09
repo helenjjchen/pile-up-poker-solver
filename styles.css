@@ -531,13 +531,12 @@ h2 {
 
 .attempt-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 10px;
 }
 
-.attempt-actions .secondary-button {
-  min-height: 36px;
-  font-size: 0.82rem;
+.attempt-actions .secondary-button,
+.attempt-actions .primary-button {
+  min-height: 42px;
 }
 
 @keyframes timer-spin {

@@ -294,16 +294,15 @@ function renderAttemptSummary() {
     return;
   }
 
+  const isAttemptOnlyResult = latestResult?.isAttemptView || latestResult?.searchOrder === "player attempt";
   if (selected.size !== 20) {
-    attemptSummary.textContent = `${baseText}. Optimize Attempt will use these cards as the deal.`;
-    attemptSummary.classList.add("is-good");
+    attemptSummary.textContent = `${baseText}. Optimize Attempt will use these cards as the deal and search.`;
     return;
   }
 
-  const bestScore = latestResult?.best?.score ?? null;
+  const bestScore = isAttemptOnlyResult ? null : latestResult?.best?.score ?? null;
   if (!bestScore) {
     attemptSummary.textContent = `${baseText}. Optimize Attempt will search from this attempt as a lower bound.`;
-    attemptSummary.classList.add("is-good");
     return;
   }
 
