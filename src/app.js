@@ -50,7 +50,6 @@ const attemptCardPreview = document.querySelector("#attemptCardPreview");
 const attemptGridSlots = document.querySelector("#attemptGridSlots");
 const attemptDiscardSlots = document.querySelector("#attemptDiscardSlots");
 const attemptSummary = document.querySelector("#attemptSummary");
-const useAttemptDealButton = document.querySelector("#useAttemptDealButton");
 const clearAttemptButton = document.querySelector("#clearAttemptButton");
 const topScore = document.querySelector("#topScore");
 const resultModeLabel = document.querySelector("#resultModeLabel");
@@ -159,6 +158,10 @@ function selectAttemptCardsAsDeal() {
   return true;
 }
 
+function canOptimizeCurrentInputs() {
+  return selected.size === 20 || attemptValidation().valid;
+}
+
 function attemptResultFromSolution(solution) {
   return {
     best: solution,
@@ -265,7 +268,7 @@ function renderAttemptCardPreview() {
 function renderAttemptSummary() {
   const validation = attemptValidation();
   attemptSummary.classList.remove("is-good", "is-warning");
-  useAttemptDealButton.disabled = !validation.valid;
+  optimizeButton.disabled = !canOptimizeCurrentInputs();
 
   if (validation.filledSlots === 0) {
     attemptScoreBadge.textContent = "Optional";
@@ -289,20 +292,19 @@ function renderAttemptSummary() {
   attemptScoreBadge.textContent = money(validation.score.total);
   const baseText = `${money(validation.score.total)} · ${validation.score.handCount} hands · ${validation.score.qualityHandCount} quality`;
   if (selected.size === 20 && !validation.matchesSelectedDeal) {
-    attemptSummary.textContent = `${baseText}. Attempt cards do not match the selected deal yet.`;
-    attemptSummary.classList.add("is-warning");
+    attemptSummary.textContent = `${baseText}. Optimize will use this player attempt instead of the manual selection.`;
     return;
   }
 
   const isAttemptOnlyResult = latestResult?.isAttemptView || latestResult?.searchOrder === "player attempt";
   if (selected.size !== 20) {
-    attemptSummary.textContent = `${baseText}. Optimize Attempt will use these cards as the deal and search.`;
+    attemptSummary.textContent = `${baseText}. Optimize will use these attempt cards as the deal.`;
     return;
   }
 
   const bestScore = isAttemptOnlyResult ? null : latestResult?.best?.score ?? null;
   if (!bestScore) {
-    attemptSummary.textContent = `${baseText}. Optimize Attempt will search from this attempt as a lower bound.`;
+    attemptSummary.textContent = `${baseText}. Optimize will search from this attempt as a lower bound.`;
     return;
   }
 
@@ -334,7 +336,7 @@ function handleAttemptSlotChange(event) {
   } else {
     attemptDiscardCards[index] = select.value;
   }
-  renderAttemptEditor();
+  renderSelectionState();
 }
 
 async function handleAttemptScreenshotChange() {
@@ -402,7 +404,7 @@ function clearAttempt() {
   attemptPreview.removeAttribute("src");
   attemptCardPreview.hidden = true;
   attemptCardPreview.innerHTML = "";
-  renderAttemptEditor();
+  renderSelectionState();
 }
 
 async function optimizeAttemptCards() {
@@ -413,6 +415,14 @@ async function optimizeAttemptCards() {
   resetOptimizerTimer();
   renderSelectionState();
   showAttemptPlacement();
+  await optimize();
+}
+
+async function optimizeCurrentInputs() {
+  if (attemptValidation().valid) {
+    await optimizeAttemptCards();
+    return;
+  }
   await optimize();
 }
 
@@ -1845,9 +1855,12 @@ function renderDeck() {
 }
 
 function renderSelectionState() {
+  const validation = attemptValidation();
   selectedCount.textContent = `${selected.size}/20`;
-  optimizeButton.disabled = selected.size !== 20;
-  if (selected.size === 20) {
+  optimizeButton.disabled = !canOptimizeCurrentInputs();
+  if (validation.valid && (selected.size !== 20 || !validation.matchesSelectedDeal)) {
+    statusLine.textContent = "Ready to optimize player attempt.";
+  } else if (selected.size === 20) {
     const bestKnown = bestKnownForCurrentDeal();
     const proof = exactProofForCurrentDeal();
     if (proof?.status === "proven" && bestKnown?.score.total === proof.bestKnownTotal) {
@@ -2162,7 +2175,6 @@ async function optimize() {
   optimizeButton.disabled = true;
   optimizeButton.textContent = "Optimizing...";
   clearButton.disabled = true;
-  useAttemptDealButton.disabled = true;
   const bestKnown = bestKnownForCurrentDeal();
   const attemptSolution = currentAttemptSolution({ requireSelectedMatch: true });
   const lowerBoundTotal = Math.max(bestKnown?.score.total ?? 0, attemptSolution?.score.total ?? 0);
@@ -2178,7 +2190,7 @@ async function optimize() {
     activeSolutionIndex = 0;
     statusLine.textContent = `Certified optimum loaded instantly: ${money(bestKnown.score.total)}.`;
     renderResult();
-    optimizeButton.disabled = selected.size !== 20;
+    optimizeButton.disabled = !canOptimizeCurrentInputs();
     optimizeButton.textContent = "Optimize";
     clearButton.disabled = false;
     renderAttemptSummary();
@@ -2312,7 +2324,7 @@ async function optimize() {
     statusLine.textContent = error instanceof Error ? error.message : "Optimizer failed.";
     finishOptimizerTimer("Stopped");
   } finally {
-    optimizeButton.disabled = selected.size !== 20;
+    optimizeButton.disabled = !canOptimizeCurrentInputs();
     optimizeButton.textContent = "Optimize";
     clearButton.disabled = false;
     renderAttemptSummary();
@@ -2333,13 +2345,12 @@ function showBestKnownPlacement() {
   renderResult();
 }
 
-optimizeButton.addEventListener("click", optimize);
+optimizeButton.addEventListener("click", optimizeCurrentInputs);
 clearButton.addEventListener("click", clearSelection);
 showBestKnownButton.addEventListener("click", showBestKnownPlacement);
 attemptScreenshot.addEventListener("change", handleAttemptScreenshotChange);
 attemptGridSlots.addEventListener("change", handleAttemptSlotChange);
 attemptDiscardSlots.addEventListener("change", handleAttemptSlotChange);
-useAttemptDealButton.addEventListener("click", optimizeAttemptCards);
 clearAttemptButton.addEventListener("click", clearAttempt);
 
 await loadSeededBestKnown();

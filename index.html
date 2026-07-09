@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pile-Up Poker Solver</title>
-    <link rel="stylesheet" href="./styles.css?v=attempt-upload-3" />
+    <link rel="stylesheet" href="./styles.css?v=attempt-upload-4" />
   </head>
   <body>
     <main class="app-shell">
@@ -26,21 +26,6 @@
           <div class="control-row">
             <button type="button" class="secondary-button" id="clearButton">Clear</button>
           </div>
-          <div class="optimizer-controls">
-            <label for="searchDepth">Search</label>
-            <select id="searchDepth">
-              <option value="3000">Quick · 3s</option>
-              <option value="10000">Balanced · 10s</option>
-              <option value="30000" selected>Deep · 30s</option>
-            </select>
-            <button type="button" class="primary-button" id="optimizeButton">Optimize</button>
-          </div>
-          <p class="status-line" id="statusLine">Select 20 cards.</p>
-          <div class="optimizer-timer is-hidden" id="optimizerTimer" aria-live="polite">
-            <span class="timer-spinner" aria-hidden="true"></span>
-            <strong id="optimizerTimerText">Idle</strong>
-          </div>
-
           <details class="attempt-panel" open>
             <summary>
               <span>Player Attempt</span>
@@ -74,12 +59,24 @@
               </p>
               <div class="attempt-actions">
                 <button type="button" class="secondary-button" id="clearAttemptButton">Clear Attempt</button>
-                <button type="button" class="primary-button" id="useAttemptDealButton" disabled>
-                  Optimize Attempt
-                </button>
               </div>
             </div>
           </details>
+
+          <div class="optimizer-controls">
+            <label for="searchDepth">Search</label>
+            <select id="searchDepth">
+              <option value="3000">Quick · 3s</option>
+              <option value="10000">Balanced · 10s</option>
+              <option value="30000" selected>Deep · 30s</option>
+            </select>
+            <button type="button" class="primary-button" id="optimizeButton">Optimize</button>
+          </div>
+          <p class="status-line" id="statusLine">Select 20 cards.</p>
+          <div class="optimizer-timer is-hidden" id="optimizerTimer" aria-live="polite">
+            <span class="timer-spinner" aria-hidden="true"></span>
+            <strong id="optimizerTimerText">Idle</strong>
+          </div>
         </aside>
 
         <section class="result-panel" aria-label="Optimizer result">
