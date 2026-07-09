@@ -1006,8 +1006,8 @@ h2 {
   }
 
   .board-main {
-    grid-template-columns: minmax(0, 1fr) minmax(68px, 82px);
-    gap: 6px 7px;
+    grid-template-columns: minmax(0, 1fr) 32px;
+    gap: 6px;
   }
 
   .row-annotations,
@@ -1037,10 +1037,20 @@ h2 {
 
   .row-line {
     padding-left: 8px;
+    align-content: center;
+    justify-items: center;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
   }
 
   .row-line::before {
     width: 3px;
+  }
+
+  .row-line strong,
+  .row-line span {
+    overflow-wrap: normal;
+    white-space: nowrap;
   }
 
   .column-line,
