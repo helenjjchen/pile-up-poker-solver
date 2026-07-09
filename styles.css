@@ -297,39 +297,34 @@ h2 {
   background: var(--green);
 }
 
-.attempt-panel {
+.screenshot-panel,
+.grid-attempt-panel {
+  display: grid;
+  gap: 10px;
   margin-top: 14px;
+  padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfbfa;
 }
 
-.attempt-panel summary {
+.section-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: 40px;
-  padding: 10px 12px;
-  cursor: pointer;
 }
 
-.attempt-panel summary span {
+.section-heading span {
   font-size: 0.86rem;
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.attempt-panel summary strong {
+.section-heading strong {
   color: var(--muted);
   font-size: 0.76rem;
   font-weight: 850;
-}
-
-.attempt-content {
-  display: grid;
-  gap: 10px;
-  padding: 0 10px 10px;
 }
 
 .attempt-upload {
@@ -389,80 +384,9 @@ h2 {
   background: #11131a;
 }
 
-.attempt-card-preview {
-  display: grid;
-  gap: 8px;
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.attempt-card-preview[hidden] {
-  display: none;
-}
-
-.attempt-card-preview span {
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.attempt-chip-section {
-  display: grid;
-  gap: 5px;
-}
-
-.attempt-chip-grid,
-.attempt-chip-discard {
-  display: grid;
-  gap: 5px;
-}
-
-.attempt-chip-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.attempt-chip-discard {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.attempt-chip {
-  min-width: 0;
-  padding: 3px 5px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fbfbfa;
-  font-size: 0.78rem;
-  font-weight: 900;
-  text-align: center;
-}
-
-.attempt-chip.is-empty {
-  color: var(--muted);
-}
-
-.attempt-manual {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.attempt-manual summary {
-  min-height: 34px;
-  padding: 8px 10px;
-  color: var(--muted);
-  font-size: 0.76rem;
-  font-weight: 900;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
 .attempt-editor {
   display: grid;
   gap: 10px;
-  padding: 0 10px 10px;
 }
 
 .attempt-label {

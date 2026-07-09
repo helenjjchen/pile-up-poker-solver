@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pile-Up Poker Solver</title>
-    <link rel="stylesheet" href="./styles.css?v=attempt-upload-4" />
+    <link rel="stylesheet" href="./styles.css?v=attempt-upload-5" />
   </head>
   <body>
     <main class="app-shell">
@@ -26,42 +26,41 @@
           <div class="control-row">
             <button type="button" class="secondary-button" id="clearButton">Clear</button>
           </div>
-          <details class="attempt-panel" open>
-            <summary>
-              <span>Player Attempt</span>
+          <section class="screenshot-panel" aria-label="Screenshot import">
+            <div class="section-heading">
+              <span>Screenshot Import</span>
+              <strong>Optional</strong>
+            </div>
+            <label class="attempt-upload" for="attemptScreenshot">
+              <span>Upload Screenshot</span>
+              <strong>Auto-detect cards + grid attempt</strong>
+              <input id="attemptScreenshot" type="file" accept="image/*" />
+            </label>
+            <img class="attempt-preview" id="attemptPreview" alt="Uploaded grid attempt screenshot" hidden />
+          </section>
+
+          <section class="grid-attempt-panel" aria-label="Grid attempt">
+            <div class="section-heading">
+              <span>Grid Attempt</span>
               <strong id="attemptScoreBadge">Optional</strong>
-            </summary>
-            <div class="attempt-content">
-              <label class="attempt-upload" for="attemptScreenshot">
-                <span>Upload Screenshot</span>
-                <strong>Auto-detect grid + discard</strong>
-                <input id="attemptScreenshot" type="file" accept="image/*" />
-              </label>
-              <img class="attempt-preview" id="attemptPreview" alt="Uploaded player attempt screenshot" hidden />
-              <div class="attempt-card-preview" id="attemptCardPreview" hidden></div>
-
-              <details class="attempt-manual">
-                <summary>Adjust detected cards</summary>
-                <div class="attempt-editor">
-                  <div class="attempt-grid-block">
-                    <span class="attempt-label">Grid</span>
-                    <div class="attempt-grid-slots" id="attemptGridSlots"></div>
-                  </div>
-                  <div class="attempt-discard-block">
-                    <span class="attempt-label">Discard</span>
-                    <div class="attempt-discard-slots" id="attemptDiscardSlots"></div>
-                  </div>
-                </div>
-              </details>
-
-              <p class="attempt-summary" id="attemptSummary">
-                Upload a Pile-Up screenshot to load the attempt automatically.
-              </p>
-              <div class="attempt-actions">
-                <button type="button" class="secondary-button" id="clearAttemptButton">Clear Attempt</button>
+            </div>
+            <div class="attempt-editor">
+              <div class="attempt-grid-block">
+                <span class="attempt-label">Grid</span>
+                <div class="attempt-grid-slots" id="attemptGridSlots"></div>
+              </div>
+              <div class="attempt-discard-block">
+                <span class="attempt-label">Discard</span>
+                <div class="attempt-discard-slots" id="attemptDiscardSlots"></div>
               </div>
             </div>
-          </details>
+            <p class="attempt-summary" id="attemptSummary">
+              Optional baseline: add a player grid here, or upload a screenshot to fill it automatically.
+            </p>
+            <div class="attempt-actions">
+              <button type="button" class="secondary-button" id="clearAttemptButton">Clear Grid Attempt</button>
+            </div>
+          </section>
 
           <div class="optimizer-controls">
             <label for="searchDepth">Search</label>

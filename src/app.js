@@ -34,6 +34,7 @@ let optimizerTimerStartedAt = 0;
 let optimizerTimerBudget = 0;
 let optimizerTimerPhase = "Working";
 let attemptPreviewUrl = null;
+let selectedSource = "manual";
 
 const deckGrid = document.querySelector("#deckGrid");
 const selectedCount = document.querySelector("#selectedCount");
@@ -46,7 +47,6 @@ const optimizerTimerText = document.querySelector("#optimizerTimerText");
 const attemptScoreBadge = document.querySelector("#attemptScoreBadge");
 const attemptScreenshot = document.querySelector("#attemptScreenshot");
 const attemptPreview = document.querySelector("#attemptPreview");
-const attemptCardPreview = document.querySelector("#attemptCardPreview");
 const attemptGridSlots = document.querySelector("#attemptGridSlots");
 const attemptDiscardSlots = document.querySelector("#attemptDiscardSlots");
 const attemptSummary = document.querySelector("#attemptSummary");
@@ -140,7 +140,7 @@ function currentAttemptSolution(options = {}) {
     grid: [...attemptGridCards],
     discard: [...attemptDiscardCards],
     score: validation.score,
-    source: "player attempt",
+    source: "grid attempt",
     key: `player-attempt-${validation.attemptDealKey}`,
   };
 }
@@ -155,11 +155,21 @@ function selectAttemptCardsAsDeal() {
   if (!validation.valid) return false;
   selected.clear();
   validation.cards.forEach((cardId) => selected.add(cardId));
+  selectedSource = "attempt";
   return true;
 }
 
 function canOptimizeCurrentInputs() {
   return selected.size === 20 || attemptValidation().valid;
+}
+
+function selectFilledAttemptCardsAsDeal() {
+  const validation = attemptValidation();
+  if (validation.filledSlots === 0 || validation.hasDuplicates) return false;
+  selected.clear();
+  validation.cards.forEach((cardId) => selected.add(cardId));
+  selectedSource = "attempt";
+  return true;
 }
 
 function attemptResultFromSolution(solution) {
@@ -170,7 +180,7 @@ function attemptResultFromSolution(solution) {
     attempts: 0,
     elapsedMs: 0,
     candidateCount: 0,
-    searchOrder: "player attempt",
+    searchOrder: "grid attempt",
     isAttemptView: true,
     exact: false,
   };
@@ -186,9 +196,11 @@ function showAttemptPlacement() {
 }
 
 function attemptOptionCards(currentCardId) {
-  const sourceCards = selected.size === 20 ? selectedCards() : allDeckCardIds();
-  if (!currentCardId || sourceCards.includes(currentCardId)) return sourceCards;
-  return sortCardIds([...sourceCards, currentCardId]);
+  const preferred = new Set([...selectedCards(), ...attemptCards()]);
+  if (currentCardId) preferred.add(currentCardId);
+  const preferredCards = sortCardIds([...preferred].filter((cardId) => CARD_BY_ID[cardId]));
+  const remainingCards = allDeckCardIds().filter((cardId) => !preferred.has(cardId));
+  return [...preferredCards, ...remainingCards];
 }
 
 function renderAttemptSelect(zone, index, currentCardId) {
@@ -220,15 +232,7 @@ function renderAttemptEditor() {
   attemptGridSlots.innerHTML = attemptGridCards
     .map((cardId, index) => renderAttemptSelect("grid", index, cardId))
     .join("");
-  renderAttemptCardPreview();
   renderAttemptSummary();
-}
-
-function renderAttemptCardChip(cardId) {
-  const card = CARD_BY_ID[cardId];
-  if (!card) return '<span class="attempt-chip is-empty">--</span>';
-  const suit = SUIT_META[card.suit];
-  return `<span class="attempt-chip ${suit.colorClass}">${card.rank}${suit.label}</span>`;
 }
 
 function screenshotScoreMismatch(recognized) {
@@ -245,26 +249,6 @@ function screenshotScoreMismatch(recognized) {
   return mismatches.length ? mismatches.join("; ") : null;
 }
 
-function renderAttemptCardPreview() {
-  const validation = attemptValidation();
-  attemptCardPreview.hidden = validation.filledSlots === 0;
-  if (validation.filledSlots === 0) {
-    attemptCardPreview.innerHTML = "";
-    return;
-  }
-
-  attemptCardPreview.innerHTML = `
-    <div class="attempt-chip-section">
-      <span>Grid</span>
-      <div class="attempt-chip-grid">${attemptGridCards.map(renderAttemptCardChip).join("")}</div>
-    </div>
-    <div class="attempt-chip-section">
-      <span>Discard</span>
-      <div class="attempt-chip-discard">${attemptDiscardCards.map(renderAttemptCardChip).join("")}</div>
-    </div>
-  `;
-}
-
 function renderAttemptSummary() {
   const validation = attemptValidation();
   attemptSummary.classList.remove("is-good", "is-warning");
@@ -272,7 +256,8 @@ function renderAttemptSummary() {
 
   if (validation.filledSlots === 0) {
     attemptScoreBadge.textContent = "Optional";
-    attemptSummary.textContent = "Upload a Pile-Up screenshot to load the attempt automatically.";
+    attemptSummary.textContent =
+      "Optional baseline: add a player grid here, or upload a screenshot to fill it automatically.";
     return;
   }
 
@@ -285,26 +270,31 @@ function renderAttemptSummary() {
 
   if (!validation.complete) {
     attemptScoreBadge.textContent = `${validation.filledSlots}/20`;
-    attemptSummary.textContent = `Enter ${20 - validation.filledSlots} more card${20 - validation.filledSlots === 1 ? "" : "s"} to score the attempt.`;
+    const remaining = 20 - validation.filledSlots;
+    attemptSummary.textContent =
+      selected.size === 20
+        ? "Grid attempt incomplete. Optimize will use the selected 20 cards unless you finish this grid."
+        : `Add ${remaining} more card${remaining === 1 ? "" : "s"} to complete the grid attempt.`;
     return;
   }
 
   attemptScoreBadge.textContent = money(validation.score.total);
   const baseText = `${money(validation.score.total)} · ${validation.score.handCount} hands · ${validation.score.qualityHandCount} quality`;
   if (selected.size === 20 && !validation.matchesSelectedDeal) {
-    attemptSummary.textContent = `${baseText}. Optimize will use this player attempt instead of the manual selection.`;
+    attemptSummary.textContent = `${baseText}. Optimize will use this grid attempt and update the selected deal.`;
     return;
   }
 
-  const isAttemptOnlyResult = latestResult?.isAttemptView || latestResult?.searchOrder === "player attempt";
+  const isAttemptOnlyResult =
+    latestResult?.isAttemptView || latestResult?.searchOrder === "grid attempt" || latestResult?.searchOrder === "player attempt";
   if (selected.size !== 20) {
-    attemptSummary.textContent = `${baseText}. Optimize will use these attempt cards as the deal.`;
+    attemptSummary.textContent = `${baseText}. Optimize will use these grid cards as the deal.`;
     return;
   }
 
   const bestScore = isAttemptOnlyResult ? null : latestResult?.best?.score ?? null;
   if (!bestScore) {
-    attemptSummary.textContent = `${baseText}. Optimize will search from this attempt as a lower bound.`;
+    attemptSummary.textContent = `${baseText}. Optimize will search from this grid as a lower bound.`;
     return;
   }
 
@@ -323,7 +313,7 @@ function renderAttemptSummary() {
     return;
   }
 
-  attemptSummary.textContent = `${baseText}. Attempt is above the current saved/search result and will be kept as the floor.`;
+  attemptSummary.textContent = `${baseText}. Grid attempt is above the current saved/search result and will be kept as the floor.`;
   attemptSummary.classList.add("is-good");
 }
 
@@ -335,6 +325,12 @@ function handleAttemptSlotChange(event) {
     attemptGridCards[index] = select.value;
   } else {
     attemptDiscardCards[index] = select.value;
+  }
+  const validation = attemptValidation();
+  if (validation.valid) {
+    selectAttemptCardsAsDeal();
+  } else if (selectedSource === "attempt" && !validation.hasDuplicates) {
+    selectFilledAttemptCardsAsDeal();
   }
   renderSelectionState();
 }
@@ -363,8 +359,9 @@ async function handleAttemptScreenshotChange() {
   try {
     const recognized = await recognizeFantasylandScreenshot(file);
     setAttemptCards(recognized.grid, recognized.discard);
-    renderAttemptEditor();
     const validation = attemptValidation();
+    if (!validation.hasDuplicates) selectFilledAttemptCardsAsDeal();
+    renderSelectionState();
     const mismatch = screenshotScoreMismatch(recognized);
     if (mismatch) {
       attemptSummary.textContent = `Detected cards do not match the screenshot score (${mismatch}). Please adjust them.`;
@@ -379,12 +376,10 @@ async function handleAttemptScreenshotChange() {
       }
       return;
     }
-    selectAttemptCardsAsDeal();
     activeSolutionIndex = 0;
     resetOptimizerTimer();
-    renderSelectionState();
     showAttemptPlacement();
-    statusLine.textContent = `Loaded player attempt from screenshot: ${money(validation.score.total)}.`;
+    statusLine.textContent = `Loaded grid attempt from screenshot: ${money(validation.score.total)}.`;
   } catch (error) {
     renderAttemptEditor();
     attemptSummary.textContent = error instanceof Error ? error.message : "Could not read screenshot cards.";
@@ -402,8 +397,7 @@ function clearAttempt() {
   attemptScreenshot.value = "";
   attemptPreview.hidden = true;
   attemptPreview.removeAttribute("src");
-  attemptCardPreview.hidden = true;
-  attemptCardPreview.innerHTML = "";
+  selectedSource = "manual";
   renderSelectionState();
 }
 
@@ -915,7 +909,7 @@ function mergeAttemptIntoResult(result, attemptSolution) {
       elapsedMs: 0,
       candidateCount: 0,
       incumbentTotal: attemptSolution.score.total,
-      searchOrder: "player attempt lower bound",
+      searchOrder: "grid attempt lower bound",
       usedAttemptLowerBound: true,
     };
   }
@@ -1859,7 +1853,7 @@ function renderSelectionState() {
   selectedCount.textContent = `${selected.size}/20`;
   optimizeButton.disabled = !canOptimizeCurrentInputs();
   if (validation.valid && (selected.size !== 20 || !validation.matchesSelectedDeal)) {
-    statusLine.textContent = "Ready to optimize player attempt.";
+    statusLine.textContent = "Ready to optimize grid attempt.";
   } else if (selected.size === 20) {
     const bestKnown = bestKnownForCurrentDeal();
     const proof = exactProofForCurrentDeal();
@@ -1883,6 +1877,7 @@ function toggleCard(cardId) {
   latestResult = null;
   activeSolutionIndex = 0;
   resetOptimizerTimer();
+  selectedSource = "manual";
   if (selected.has(cardId)) selected.delete(cardId);
   else if (selected.size < 20) selected.add(cardId);
   renderSelectionState();
@@ -1893,6 +1888,7 @@ function clearSelection() {
   latestResult = null;
   activeSolutionIndex = 0;
   resetOptimizerTimer();
+  selectedSource = "manual";
   renderSelectionState();
   renderEmptyResult();
 }
@@ -2135,7 +2131,7 @@ function renderResult() {
       ? `Certified optimal · ${Math.round(latestResult.elapsedMs).toLocaleString()} ms`
       : `${Math.round(latestResult.elapsedMs).toLocaleString()} ms · ${latestResult.attempts.toLocaleString()} searches`;
   resultModeLabel.textContent = latestResult.isAttemptView
-    ? "Player Attempt"
+    ? "Grid Attempt"
     : latestResult.exact
       ? "Best Possible"
       : "Best Found";
@@ -2200,7 +2196,7 @@ async function optimize() {
   const timeBudget = Number(searchDepth.value);
   startOptimizerTimer(timeBudget, "Starting");
   const lowerBoundLabel = attemptSolution
-    ? `player attempt ${money(attemptSolution.score.total)}`
+    ? `grid attempt ${money(attemptSolution.score.total)}`
     : bestKnown
       ? `saved lower bound ${money(bestKnown.score.total)}`
       : null;
