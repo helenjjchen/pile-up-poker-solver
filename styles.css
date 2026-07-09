@@ -375,6 +375,10 @@ h2 {
   outline-offset: 2px;
 }
 
+.screenshot-panel + .deck-grid {
+  margin-top: 14px;
+}
+
 .attempt-preview {
   width: 100%;
   max-height: 190px;
@@ -962,8 +966,14 @@ h2 {
 }
 
 @media (max-width: 560px) {
+  .app-shell {
+    padding: 12px;
+  }
+
   .topbar {
     display: grid;
+    gap: 12px;
+    padding-bottom: 16px;
   }
 
   h1 {
@@ -980,7 +990,34 @@ h2 {
   }
 
   .score-strip {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .score-strip div {
+    min-height: 58px;
+    padding: 9px 10px;
+  }
+
+  .score-strip div:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .score-strip strong {
+    font-size: 1.15rem;
+  }
+
+  .diagnostics-panel,
+  .scoring-explainer {
+    margin-bottom: 8px;
+  }
+
+  .diagnostics-panel summary,
+  .scoring-explainer summary {
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 0.72rem;
   }
 
   .best-known-panel {
@@ -1033,6 +1070,15 @@ h2 {
     font-size: clamp(1.65rem, 7.2vw, 2.45rem);
   }
 
+  .solutions-row {
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .solution-group {
+    flex-basis: calc((100% - 8px) / 2);
+  }
+
   .bucket-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1070,7 +1116,7 @@ h2 {
   }
 
   .column-line span {
-    display: none;
+    display: block;
   }
 
   .column-line::before,

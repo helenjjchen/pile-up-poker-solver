@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pile-Up Poker Solver</title>
-    <link rel="stylesheet" href="./styles.css?v=attempt-upload-7" />
+    <link rel="stylesheet" href="./styles.css?v=attempt-upload-9" />
   </head>
   <body>
     <main class="app-shell">
@@ -17,27 +17,27 @@
       </header>
 
       <section class="workspace">
-        <aside class="picker-panel" aria-label="Card picker">
+        <aside class="picker-panel" aria-label="Deal card picker">
           <div class="panel-heading">
-            <h2>Cards</h2>
+            <h2>Deal Cards</h2>
             <span id="selectedCount">0/20</span>
-          </div>
-          <div class="deck-grid" id="deckGrid"></div>
-          <div class="control-row">
-            <button type="button" class="secondary-button" id="clearButton">Clear</button>
           </div>
           <section class="screenshot-panel" aria-label="Screenshot import">
             <div class="section-heading">
               <span>Screenshot Import</span>
-              <strong>Optional</strong>
+              <strong>Auto-fill</strong>
             </div>
             <label class="attempt-upload" for="attemptScreenshot">
               <span>Upload Screenshot</span>
-              <strong>Auto-detect cards + grid attempt</strong>
+              <strong>Auto-detect deal + grid attempt</strong>
               <input id="attemptScreenshot" type="file" accept="image/*" />
             </label>
             <img class="attempt-preview" id="attemptPreview" alt="Uploaded grid attempt screenshot" hidden />
           </section>
+          <div class="deck-grid" id="deckGrid"></div>
+          <div class="control-row">
+            <button type="button" class="secondary-button" id="clearButton">Clear</button>
+          </div>
 
           <section class="grid-attempt-panel" aria-label="Grid attempt">
             <div class="section-heading">
