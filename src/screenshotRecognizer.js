@@ -419,27 +419,20 @@ function classifyRankCandidate(imageData, rect, suit, crop) {
   return classifyRank(features);
 }
 
-function betterRankCandidate(current, candidate) {
-  if (!current?.rank) return candidate;
-  if (!candidate?.rank) return current;
-  return candidate.confidence > current.confidence ? candidate : current;
-}
-
 function classifyRankFromSlot(imageData, rect, suit, zone) {
   const crops = zone === "discard" ? DISCARD_RANK_CROPS : GRID_RANK_CROPS;
   const candidates = crops.map((crop) => classifyRankCandidate(imageData, rect, suit, crop));
+  const rankedCandidates = candidates
+    .filter((candidate) => candidate?.rank)
+    .sort((a, b) => b.confidence - a.confidence);
+  const bestCandidate = rankedCandidates[0] ?? { rank: null, confidence: 0 };
+  const alternatives = rankedCandidates.filter((candidate) => candidate.rank !== bestCandidate.rank);
 
   if (zone === "discard") {
-    return candidates.reduce((best, candidate) => betterRankCandidate(best, candidate), null) ?? {
-      rank: null,
-      confidence: 0,
-    };
+    return { ...bestCandidate, alternatives };
   }
 
-  return candidates.reduce((best, candidate) => betterRankCandidate(best, candidate), null) ?? {
-    rank: null,
-    confidence: 0,
-  };
+  return { ...bestCandidate, alternatives };
 }
 
 function recognizeSlot(imageData, rect, zone) {
@@ -450,6 +443,12 @@ function recognizeSlot(imageData, rect, zone) {
     rank: rankResult.rank,
     suit: suitResult.suit,
     confidence: Math.min(suitResult.confidence, rankResult.confidence),
+    alternatives: rankResult.alternatives.map((alternative) => ({
+      cardId: `${alternative.rank}${suitResult.suit}`,
+      rank: alternative.rank,
+      suit: suitResult.suit,
+      confidence: Math.min(suitResult.confidence, alternative.confidence),
+    })),
   };
 }
 
@@ -470,6 +469,48 @@ function clearRecognizedSlot(slot) {
   slot.cardId = null;
   slot.rank = null;
   slot.confidence = 0;
+}
+
+function deckCounts(slots) {
+  const cards = new Map();
+  const ranks = new Map();
+  slots.forEach((slot) => {
+    if (!slot.cardId) return;
+    cards.set(slot.cardId, (cards.get(slot.cardId) ?? 0) + 1);
+    const rank = cardRank(slot.cardId);
+    ranks.set(rank, (ranks.get(rank) ?? 0) + 1);
+  });
+  return { cards, ranks };
+}
+
+function candidateFitsDeck(candidate, counts) {
+  if (!candidate?.cardId) return false;
+  return (counts.cards.get(candidate.cardId) ?? 0) < 1 && (counts.ranks.get(cardRank(candidate.cardId)) ?? 0) < 4;
+}
+
+function applyCandidate(slot, candidate) {
+  slot.cardId = candidate.cardId;
+  slot.rank = candidate.rank;
+  slot.suit = candidate.suit;
+  slot.confidence = candidate.confidence;
+}
+
+function fillClearedSlotsFromAlternatives(slots) {
+  let changed = false;
+  const counts = deckCounts(slots);
+
+  slots.forEach((slot) => {
+    if (slot.cardId || !slot.alternatives?.length) return;
+    const candidate = slot.alternatives.find((alternative) => candidateFitsDeck(alternative, counts));
+    if (!candidate) return;
+
+    applyCandidate(slot, candidate);
+    counts.cards.set(candidate.cardId, (counts.cards.get(candidate.cardId) ?? 0) + 1);
+    counts.ranks.set(candidate.rank, (counts.ranks.get(candidate.rank) ?? 0) + 1);
+    changed = true;
+  });
+
+  return changed;
 }
 
 function clearOverflowSlots(slots, keyForSlot, limit) {
@@ -496,7 +537,16 @@ function clearOverflowSlots(slots, keyForSlot, limit) {
 function enforceDeckConstraints(slots) {
   const clearedDuplicateCards = clearOverflowSlots(slots, (slot) => slot.cardId, 1);
   const clearedRankOverflow = clearOverflowSlots(slots, (slot) => cardRank(slot.cardId), 4);
-  return clearedDuplicateCards || clearedRankOverflow;
+  const filledAlternatives = fillClearedSlotsFromAlternatives(slots);
+  const clearedAlternativeDuplicates = clearOverflowSlots(slots, (slot) => slot.cardId, 1);
+  const clearedAlternativeRankOverflow = clearOverflowSlots(slots, (slot) => cardRank(slot.cardId), 4);
+  return (
+    clearedDuplicateCards ||
+    clearedRankOverflow ||
+    filledAlternatives ||
+    clearedAlternativeDuplicates ||
+    clearedAlternativeRankOverflow
+  );
 }
 
 function isCardColor(color) {
@@ -883,8 +933,7 @@ function recognizeDisplayedScore(imageData) {
   return {
     handCount: handDigits === "10" ? 10 : null,
     // The visible dollar total is a useful future cross-check, but false reads
-    // are worse than no read because they can reject a good upload. Keep it
-    // unset until the OCR is robust across cropped/antialiased screenshots.
+    // are worse than no read because they can reject a good upload.
     total: null,
   };
 }
@@ -949,7 +998,7 @@ export function recognizeFantasylandImageData(imageData) {
   const discardSlots = Array.from({ length: 4 }, (_, index) =>
     rects.discard[index] ? recognizeSlot(imageData, rects.discard[index], "discard") : emptySlot(),
   );
-  const clearedImpossibleGuesses = enforceDeckConstraints([...gridSlots, ...discardSlots]);
+  enforceDeckConstraints([...gridSlots, ...discardSlots]);
   const displayedScore = recognizeDisplayedScore(imageData);
   const cards = [...gridSlots, ...discardSlots].map((slot) => slot.cardId);
   const recognizedCards = cards.filter(Boolean);
@@ -958,9 +1007,7 @@ export function recognizeFantasylandImageData(imageData) {
   const confidence = Math.min(...[...gridSlots, ...discardSlots].map((slot) => slot.confidence));
   let warning = "";
   if (missing) {
-    warning = clearedImpossibleGuesses
-      ? `I read ${recognizedCards.length}/20 usable cards from the screenshot. Some impossible OCR guesses were left blank; please adjust the rest manually.`
-      : `I read ${recognizedCards.length}/20 cards from the screenshot. Please adjust the rest manually.`;
+    warning = `${recognizedCards.length}/20 cards auto-detected from the screenshot. Please adjust the rest manually.`;
   } else if (duplicates) {
     warning = "I read 20 cards from the screenshot, but some were duplicates. Please adjust them manually.";
   } else if (confidence < 0.6) {

@@ -213,7 +213,7 @@ h2 {
 }
 
 .control-row {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
 }
 
 .optimizer-controls {

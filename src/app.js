@@ -1,7 +1,6 @@
 import {
   CARD_BY_ID,
   DECK,
-  SAMPLE_FANTASYLAND_DEAL,
   SUIT_META,
   canonicalizeDeal,
   canonicalDealKey,
@@ -13,7 +12,7 @@ import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=s
 import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-1";
 import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
-import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-12";
+import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-13";
 
 const selected = new Set();
 const attemptGridCards = Array(16).fill("");
@@ -40,7 +39,6 @@ const deckGrid = document.querySelector("#deckGrid");
 const selectedCount = document.querySelector("#selectedCount");
 const optimizeButton = document.querySelector("#optimizeButton");
 const clearButton = document.querySelector("#clearButton");
-const loadSampleButton = document.querySelector("#loadSampleButton");
 const searchDepth = document.querySelector("#searchDepth");
 const statusLine = document.querySelector("#statusLine");
 const optimizerTimer = document.querySelector("#optimizerTimer");
@@ -297,14 +295,14 @@ function renderAttemptSummary() {
   }
 
   if (selected.size !== 20) {
-    attemptSummary.textContent = `${baseText}. Use these cards as the deal or select the same 20 cards above.`;
+    attemptSummary.textContent = `${baseText}. Optimize Attempt will use these cards as the deal.`;
     attemptSummary.classList.add("is-good");
     return;
   }
 
   const bestScore = latestResult?.best?.score ?? null;
   if (!bestScore) {
-    attemptSummary.textContent = `${baseText}. This will seed the next search as a lower bound.`;
+    attemptSummary.textContent = `${baseText}. Optimize Attempt will search from this attempt as a lower bound.`;
     attemptSummary.classList.add("is-good");
     return;
   }
@@ -313,13 +311,13 @@ function renderAttemptSummary() {
   if (diff > 0) {
     const higherSolutions = (latestResult.solutions ?? []).filter((solution) => solution.score.total > validation.score.total);
     const higherOutcomes = new Set(higherSolutions.map(solutionOutcomeKey)).size;
-    attemptSummary.textContent = `${baseText}. Best found is +${money(diff)} higher across ${higherOutcomes} found outcome${higherOutcomes === 1 ? "" : "s"}.`;
+    attemptSummary.textContent = `${baseText}. Current best found is +${money(diff)} higher across ${higherOutcomes} found outcome${higherOutcomes === 1 ? "" : "s"}.`;
     attemptSummary.classList.add("is-warning");
     return;
   }
 
   if (diff === 0) {
-    attemptSummary.textContent = `${baseText}. This matches the best found score.`;
+    attemptSummary.textContent = `${baseText}. This matches the current best found score.`;
     attemptSummary.classList.add("is-good");
     return;
   }
@@ -408,7 +406,7 @@ function clearAttempt() {
   renderAttemptEditor();
 }
 
-function useAttemptCardsAsDeal() {
+async function optimizeAttemptCards() {
   const validation = attemptValidation();
   if (!validation.valid) return;
   selectAttemptCardsAsDeal();
@@ -416,6 +414,7 @@ function useAttemptCardsAsDeal() {
   resetOptimizerTimer();
   renderSelectionState();
   showAttemptPlacement();
+  await optimize();
 }
 
 function renderOptimizerTimer() {
@@ -1886,16 +1885,6 @@ function clearSelection() {
   renderEmptyResult();
 }
 
-function loadSample() {
-  selected.clear();
-  SAMPLE_FANTASYLAND_DEAL.forEach((cardId) => selected.add(cardId));
-  latestResult = null;
-  activeSolutionIndex = 0;
-  resetOptimizerTimer();
-  renderSelectionState();
-  renderEmptyResult();
-}
-
 function renderEmptyResult() {
   topScore.textContent = "$0";
   resultModeLabel.textContent = "Best Found";
@@ -2173,8 +2162,8 @@ async function optimize() {
   resetOptimizerTimer();
   optimizeButton.disabled = true;
   optimizeButton.textContent = "Optimizing...";
-  loadSampleButton.disabled = true;
   clearButton.disabled = true;
+  useAttemptDealButton.disabled = true;
   const bestKnown = bestKnownForCurrentDeal();
   const attemptSolution = currentAttemptSolution({ requireSelectedMatch: true });
   const lowerBoundTotal = Math.max(bestKnown?.score.total ?? 0, attemptSolution?.score.total ?? 0);
@@ -2192,8 +2181,8 @@ async function optimize() {
     renderResult();
     optimizeButton.disabled = selected.size !== 20;
     optimizeButton.textContent = "Optimize";
-    loadSampleButton.disabled = false;
     clearButton.disabled = false;
+    renderAttemptSummary();
     return;
   }
 
@@ -2326,8 +2315,8 @@ async function optimize() {
   } finally {
     optimizeButton.disabled = selected.size !== 20;
     optimizeButton.textContent = "Optimize";
-    loadSampleButton.disabled = false;
     clearButton.disabled = false;
+    renderAttemptSummary();
   }
 }
 
@@ -2347,12 +2336,11 @@ function showBestKnownPlacement() {
 
 optimizeButton.addEventListener("click", optimize);
 clearButton.addEventListener("click", clearSelection);
-loadSampleButton.addEventListener("click", loadSample);
 showBestKnownButton.addEventListener("click", showBestKnownPlacement);
 attemptScreenshot.addEventListener("change", handleAttemptScreenshotChange);
 attemptGridSlots.addEventListener("change", handleAttemptSlotChange);
 attemptDiscardSlots.addEventListener("change", handleAttemptSlotChange);
-useAttemptDealButton.addEventListener("click", useAttemptCardsAsDeal);
+useAttemptDealButton.addEventListener("click", optimizeAttemptCards);
 clearAttemptButton.addEventListener("click", clearAttempt);
 
 await loadSeededBestKnown();
