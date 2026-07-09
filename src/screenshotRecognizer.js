@@ -359,14 +359,31 @@ function classifyRank(features) {
   if (right > (left + middleX) * 0.85 && top > middleY * 1.25 && bottom > middleY * 1.25 && pixelCount > 70) {
     return { rank: "Q", confidence: 0.93 };
   }
+  if (
+    width >= 18 &&
+    width <= 30 &&
+    componentCount <= 2 &&
+    middleX > Math.max(left, right) * 2.2 &&
+    bottom > middleY * 1.2 &&
+    bottom > top * 3 &&
+    top < middleY * 0.55
+  ) {
+    return { rank: "J", confidence: 0.91 };
+  }
   if (right > left * 1.8 && bottom >= top * 1.25) {
     return { rank: "J", confidence: 0.86 };
   }
   if (width > 22 && pixelCount < 42) {
     return { rank: "J", confidence: 0.78 };
   }
-  if (width > 22 && pixelCount > 65 && top < middleY * 0.5 && bottom >= middleY * 0.9) {
-    return { rank: "A", confidence: 0.78 };
+  if (
+    width > 22 &&
+    pixelCount > 65 &&
+    top < middleY * 0.5 &&
+    bottom >= middleY * 0.9 &&
+    middleX <= Math.max(left, right) * 2
+  ) {
+    return { rank: "A", confidence: 0.72 };
   }
   if (width >= 14 && left > right * 1.8 && left > middleX * 1.4 && pixelCount > 80) {
     return { rank: "K", confidence: 0.82 };
@@ -1042,3 +1059,7 @@ export async function recognizeFantasylandScreenshot(file) {
 
   return recognizeFantasylandImageData(context.getImageData(0, 0, width, height));
 }
+
+export const __recognizerTestHooks = {
+  classifyRank,
+};

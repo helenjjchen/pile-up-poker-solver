@@ -12,7 +12,7 @@ import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=s
 import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-1";
 import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
-import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-13";
+import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-14";
 
 const selected = new Set();
 const attemptGridCards = Array(16).fill("");
@@ -210,7 +210,8 @@ function attemptOptionGroups() {
 function renderAttemptOption(cardId, currentCardId, usedCards) {
   const selectedAttr = cardId === currentCardId ? " selected" : "";
   const disabledAttr = usedCards.has(cardId) && cardId !== currentCardId ? " disabled" : "";
-  return `<option value="${cardId}"${selectedAttr}${disabledAttr}>${cardLabel(cardId)}</option>`;
+  const suitClass = SUIT_META[CARD_BY_ID[cardId].suit].colorClass;
+  return `<option class="${suitClass}" value="${cardId}"${selectedAttr}${disabledAttr}>${cardLabel(cardId)}</option>`;
 }
 
 function renderAttemptOptionGroup(group, currentCardId, usedCards) {
@@ -223,6 +224,7 @@ function renderAttemptOptionGroup(group, currentCardId, usedCards) {
 function renderAttemptSelect(zone, index, currentCardId) {
   const usedCards = new Set(attemptCards());
   const label = zone === "grid" ? `${Math.floor(index / 4) + 1}.${(index % 4) + 1}` : `D${index + 1}`;
+  const suitClass = currentCardId ? SUIT_META[CARD_BY_ID[currentCardId].suit].colorClass : "";
   const options = [
     '<option value="">--</option>',
     ...attemptOptionGroups().map((group) => renderAttemptOptionGroup(group, currentCardId, usedCards)),
@@ -231,7 +233,7 @@ function renderAttemptSelect(zone, index, currentCardId) {
   return `
     <label class="attempt-slot">
       <span>${label}</span>
-      <select data-attempt-zone="${zone}" data-attempt-index="${index}" aria-label="${zone} card ${index + 1}">
+      <select class="${suitClass}" data-attempt-zone="${zone}" data-attempt-index="${index}" aria-label="${zone} card ${index + 1}">
         ${options}
       </select>
     </label>

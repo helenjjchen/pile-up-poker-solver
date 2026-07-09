@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "/Users/helen/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node server.mjs",
     "compile:exact": "clang++ -std=c++20 -O3 tools/exact_fantasyland_10.cpp -o tools/bin/exact_fantasyland_10",
-    "test": "/Users/helen/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/scoring.test.js"
+    "test": "/Users/helen/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/scoring.test.js && /Users/helen/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node tests/recognizer.test.js"
   },
   "dependencies": {
     "highs": "^1.14.2"
