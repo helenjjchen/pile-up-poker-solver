@@ -211,18 +211,19 @@ function renderAttemptOption(cardId, currentCardId, usedCards) {
   return `<option value="${cardId}"${selectedAttr}${disabledAttr}>${cardLabel(cardId)}</option>`;
 }
 
+function renderAttemptOptionGroup(group, currentCardId, usedCards) {
+  return `
+    <option class="attempt-option-group" value="" disabled>${group.label}</option>
+    ${group.cards.map((cardId) => renderAttemptOption(cardId, currentCardId, usedCards)).join("")}
+  `;
+}
+
 function renderAttemptSelect(zone, index, currentCardId) {
   const usedCards = new Set(attemptCards());
   const label = zone === "grid" ? `${Math.floor(index / 4) + 1}.${(index % 4) + 1}` : `D${index + 1}`;
   const options = [
     '<option value="">--</option>',
-    ...attemptOptionGroups().map(
-      (group) => `
-        <optgroup label="${group.label}">
-          ${group.cards.map((cardId) => renderAttemptOption(cardId, currentCardId, usedCards)).join("")}
-        </optgroup>
-      `,
-    ),
+    ...attemptOptionGroups().map((group) => renderAttemptOptionGroup(group, currentCardId, usedCards)),
   ].join("");
 
   return `

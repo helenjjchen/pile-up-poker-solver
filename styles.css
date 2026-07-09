@@ -435,6 +435,14 @@ h2 {
   font-weight: 800;
 }
 
+.attempt-slot select option.attempt-option-group {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .attempt-summary {
   min-height: 18px;
   margin: 0;
