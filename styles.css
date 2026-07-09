@@ -997,7 +997,7 @@ h2 {
 
   .board-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 7px;
+    gap: 6px;
   }
 
   .board-area {
@@ -1006,21 +1006,31 @@ h2 {
   }
 
   .board-main {
-    grid-template-columns: minmax(0, 1fr) 32px;
-    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) 28px;
+    gap: 5px;
   }
 
   .row-annotations,
   .column-annotations {
-    gap: 7px;
+    gap: 6px;
   }
 
   .playing-card {
-    min-height: 82px;
+    min-height: 74px;
   }
 
   .discard-stack .playing-card {
-    min-height: 70px;
+    min-height: 66px;
+  }
+
+  .playing-card .corner {
+    top: 6px;
+    left: 7px;
+    font-size: 0.78rem;
+  }
+
+  .playing-card .big-rank {
+    font-size: clamp(1.65rem, 7.2vw, 2.45rem);
   }
 
   .bucket-list {
@@ -1039,7 +1049,7 @@ h2 {
     padding-left: 8px;
     align-content: center;
     justify-items: center;
-    writing-mode: vertical-rl;
+    writing-mode: vertical-lr;
     text-orientation: mixed;
   }
 
@@ -1055,8 +1065,8 @@ h2 {
 
   .column-line,
   .discard-line {
-    min-height: 42px;
-    padding-top: 10px;
+    min-height: 36px;
+    padding-top: 8px;
   }
 
   .column-line span {
