@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pile-Up Poker Solver</title>
-    <link rel="stylesheet" href="./styles.css?v=attempt-upload-9" />
+    <link rel="stylesheet" href="./styles.css?v=attempt-upload-11" />
   </head>
   <body>
     <main class="app-shell">
@@ -34,10 +34,16 @@
             </label>
             <img class="attempt-preview" id="attemptPreview" alt="Uploaded grid attempt screenshot" hidden />
           </section>
-          <div class="deck-grid" id="deckGrid"></div>
-          <div class="control-row">
-            <button type="button" class="secondary-button" id="clearButton">Clear</button>
-          </div>
+          <details class="manual-picker-panel" id="manualPickerDetails" open>
+            <summary>
+              <span>Manual Deal Picker</span>
+              <strong id="manualPickerHint">Choose 20 cards</strong>
+            </summary>
+            <div class="deck-grid" id="deckGrid"></div>
+            <div class="control-row">
+              <button type="button" class="secondary-button" id="clearButton">Clear</button>
+            </div>
+          </details>
 
           <section class="grid-attempt-panel" aria-label="Grid attempt">
             <div class="section-heading">
@@ -168,6 +174,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/app.js?v=solver-cache-23"></script>
+    <script type="module" src="./src/app.js?v=solver-cache-24"></script>
   </body>
 </html>

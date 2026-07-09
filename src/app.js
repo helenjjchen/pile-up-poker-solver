@@ -51,6 +51,8 @@ const attemptGridSlots = document.querySelector("#attemptGridSlots");
 const attemptDiscardSlots = document.querySelector("#attemptDiscardSlots");
 const attemptSummary = document.querySelector("#attemptSummary");
 const clearAttemptButton = document.querySelector("#clearAttemptButton");
+const manualPickerDetails = document.querySelector("#manualPickerDetails");
+const manualPickerHint = document.querySelector("#manualPickerHint");
 const topScore = document.querySelector("#topScore");
 const resultModeLabel = document.querySelector("#resultModeLabel");
 const resultTotal = document.querySelector("#resultTotal");
@@ -305,7 +307,7 @@ function renderAttemptSummary() {
 
   const bestScore = isAttemptOnlyResult ? null : latestResult?.best?.score ?? null;
   if (!bestScore) {
-    attemptSummary.textContent = `${baseText}. Optimize will search from this grid as a lower bound.`;
+    attemptSummary.textContent = `${baseText}. Review grid/discard, then Optimize will search from this grid as a lower bound.`;
     return;
   }
 
@@ -373,6 +375,9 @@ async function handleAttemptScreenshotChange() {
     const validation = attemptValidation();
     if (!validation.hasDuplicates) selectFilledAttemptCardsAsDeal();
     renderSelectionState();
+    if (selectedSource === "attempt" && selected.size > 0) {
+      manualPickerDetails.open = false;
+    }
     const mismatch = screenshotScoreMismatch(recognized);
     if (mismatch) {
       attemptSummary.textContent = `Detected cards do not match the screenshot score (${mismatch}). Please adjust them.`;
@@ -409,6 +414,7 @@ function clearAttempt() {
   attemptPreview.hidden = true;
   attemptPreview.removeAttribute("src");
   selectedSource = "manual";
+  manualPickerDetails.open = true;
   renderSelectionState();
 }
 
@@ -1862,6 +1868,14 @@ function renderDeck() {
 function renderSelectionState() {
   const validation = attemptValidation();
   selectedCount.textContent = `${selected.size}/20`;
+  if (selectedSource === "attempt" && selected.size > 0) {
+    manualPickerHint.textContent = `${selected.size}/20 auto-selected`;
+  } else if (selected.size === 20) {
+    manualPickerHint.textContent = "20/20 selected";
+  } else {
+    const remaining = 20 - selected.size;
+    manualPickerHint.textContent = `Choose ${remaining} more`;
+  }
   optimizeButton.disabled = !canOptimizeCurrentInputs();
   if (validation.valid && (selected.size !== 20 || !validation.matchesSelectedDeal)) {
     statusLine.textContent = "Ready to optimize grid attempt.";
@@ -1889,6 +1903,7 @@ function toggleCard(cardId) {
   activeSolutionIndex = 0;
   resetOptimizerTimer();
   selectedSource = "manual";
+  manualPickerDetails.open = true;
   if (selected.has(cardId)) selected.delete(cardId);
   else if (selected.size < 20) selected.add(cardId);
   renderSelectionState();
@@ -1900,6 +1915,7 @@ function clearSelection() {
   activeSolutionIndex = 0;
   resetOptimizerTimer();
   selectedSource = "manual";
+  manualPickerDetails.open = true;
   renderSelectionState();
   renderEmptyResult();
 }
