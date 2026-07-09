@@ -195,12 +195,20 @@ function showAttemptPlacement() {
   return true;
 }
 
-function attemptOptionCards(currentCardId) {
-  const preferred = new Set([...selectedCards(), ...attemptCards()]);
-  if (currentCardId) preferred.add(currentCardId);
-  const preferredCards = sortCardIds([...preferred].filter((cardId) => CARD_BY_ID[cardId]));
-  const remainingCards = allDeckCardIds().filter((cardId) => !preferred.has(cardId));
-  return [...preferredCards, ...remainingCards];
+function attemptOptionGroups() {
+  const chosenCards = selectedCards();
+  const chosen = new Set(chosenCards);
+  const restOfDeck = allDeckCardIds().filter((cardId) => !chosen.has(cardId));
+  return [
+    { label: chosenCards.length ? "Chosen cards" : "No cards chosen yet", cards: chosenCards },
+    { label: chosenCards.length ? "Rest of deck" : "All cards", cards: restOfDeck },
+  ].filter((group) => group.cards.length > 0);
+}
+
+function renderAttemptOption(cardId, currentCardId, usedCards) {
+  const selectedAttr = cardId === currentCardId ? " selected" : "";
+  const disabledAttr = usedCards.has(cardId) && cardId !== currentCardId ? " disabled" : "";
+  return `<option value="${cardId}"${selectedAttr}${disabledAttr}>${cardLabel(cardId)}</option>`;
 }
 
 function renderAttemptSelect(zone, index, currentCardId) {
@@ -208,11 +216,13 @@ function renderAttemptSelect(zone, index, currentCardId) {
   const label = zone === "grid" ? `${Math.floor(index / 4) + 1}.${(index % 4) + 1}` : `D${index + 1}`;
   const options = [
     '<option value="">--</option>',
-    ...attemptOptionCards(currentCardId).map((cardId) => {
-      const selectedAttr = cardId === currentCardId ? " selected" : "";
-      const disabledAttr = usedCards.has(cardId) && cardId !== currentCardId ? " disabled" : "";
-      return `<option value="${cardId}"${selectedAttr}${disabledAttr}>${cardLabel(cardId)}</option>`;
-    }),
+    ...attemptOptionGroups().map(
+      (group) => `
+        <optgroup label="${group.label}">
+          ${group.cards.map((cardId) => renderAttemptOption(cardId, currentCardId, usedCards)).join("")}
+        </optgroup>
+      `,
+    ),
   ].join("");
 
   return `
