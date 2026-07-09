@@ -372,7 +372,7 @@ async function handleAttemptScreenshotChange() {
       attemptSummary.classList.add("is-warning");
       return;
     }
-    if (!validation.complete) {
+    if (!validation.valid) {
       renderAttemptSummary();
       if (recognized.warning) {
         attemptSummary.textContent = recognized.warning;
