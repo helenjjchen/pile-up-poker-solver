@@ -13,7 +13,7 @@ import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=s
 import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-1";
 import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
-import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-3";
+import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-4";
 
 const selected = new Set();
 const attemptGridCards = Array(16).fill("");
@@ -365,10 +365,19 @@ async function handleAttemptScreenshotChange() {
     const recognized = await recognizeFantasylandScreenshot(file);
     setAttemptCards(recognized.grid, recognized.discard);
     renderAttemptEditor();
+    const validation = attemptValidation();
     const mismatch = screenshotScoreMismatch(recognized);
     if (mismatch) {
       attemptSummary.textContent = `Detected cards do not match the screenshot score (${mismatch}). Please adjust them.`;
       attemptSummary.classList.add("is-warning");
+      return;
+    }
+    if (!validation.complete) {
+      renderAttemptSummary();
+      if (recognized.warning) {
+        attemptSummary.textContent = recognized.warning;
+        attemptSummary.classList.add("is-warning");
+      }
       return;
     }
     selectAttemptCardsAsDeal();
@@ -376,7 +385,7 @@ async function handleAttemptScreenshotChange() {
     resetOptimizerTimer();
     renderSelectionState();
     showAttemptPlacement();
-    statusLine.textContent = `Loaded player attempt from screenshot: ${money(attemptValidation().score.total)}.`;
+    statusLine.textContent = `Loaded player attempt from screenshot: ${money(validation.score.total)}.`;
   } catch (error) {
     renderAttemptEditor();
     attemptSummary.textContent = error instanceof Error ? error.message : "Could not read screenshot cards.";

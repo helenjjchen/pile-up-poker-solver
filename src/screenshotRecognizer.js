@@ -8,6 +8,14 @@ const SUIT_REFERENCES = {
 const GRID_CENTERS_X = [0.306, 0.476, 0.646, 0.815];
 const GRID_CENTERS_Y = [0.236, 0.343, 0.45, 0.556];
 const TRAY_CENTERS_X = [0.25, 0.418, 0.586, 0.753];
+const GRID_RANK_CROPS = [
+  { xStart: 0.11, xEnd: 0.34, yStart: 0.06, yEnd: 0.25 },
+  { xStart: 0.08, xEnd: 0.43, yStart: 0.055, yEnd: 0.25 },
+];
+const DISCARD_RANK_CROPS = [
+  { xStart: 0.04, xEnd: 0.22, yStart: 0.03, yEnd: 0.22 },
+  { xStart: 0.11, xEnd: 0.34, yStart: 0.03, yEnd: 0.18 },
+];
 
 function colorDistance(color, reference) {
   return (
@@ -97,16 +105,16 @@ function classifySuit(imageData, rect) {
   return { suit, confidence: Math.min(1, count / 24) };
 }
 
-function rankPoints(imageData, rect, suit) {
+function rankPoints(imageData, rect, suit, crop) {
   const reference = SUIT_REFERENCES[suit];
   const width = rect.right - rect.left;
   const height = rect.bottom - rect.top;
   // Face cards use character art in the middle of the card, so only read the
   // small top-left rank glyph. The suit is read separately from color.
-  const xStart = Math.floor(rect.left + width * 0.08);
-  const xEnd = Math.floor(rect.left + width * 0.43);
-  const yStart = Math.floor(rect.top + height * 0.055);
-  const yEnd = Math.floor(rect.top + height * 0.25);
+  const xStart = Math.floor(rect.left + width * crop.xStart);
+  const xEnd = Math.floor(rect.left + width * crop.xEnd);
+  const yStart = Math.floor(rect.top + height * crop.yStart);
+  const yEnd = Math.floor(rect.top + height * crop.yEnd);
   const rawPoints = [];
 
   for (let y = yStart; y < yEnd; y += 1) {
@@ -223,25 +231,22 @@ function classifyRank(features) {
 
   if (pixelCount < 25) return { rank: null, confidence: 0 };
   if (holes.length >= 2) return { rank: "8", confidence: 0.95 };
-  if (
-    (componentCount >= 2 && pixelCount > 110) ||
-    (width >= 20 && holes.length === 1 && primaryHole.y > 0.4 && primaryHole.x > 0.55)
-  ) {
+  if (width >= 28 && holes.length === 1 && componentCount >= 2 && primaryHole.y > 0.35 && primaryHole.x > 0.25) {
     return { rank: "10", confidence: 0.95 };
   }
 
   if (holes.length === 1) {
-    if (width >= 20 && primaryHole.x < 0.3) return { rank: "A", confidence: 0.9 };
+    if (width >= 20 && primaryHole.x < 0.3 && primaryHole.y > 0.25) return { rank: "A", confidence: 0.9 };
     return primaryHole.y > 0.5 ? { rank: "6", confidence: 0.9 } : { rank: "9", confidence: 0.9 };
   }
 
-  if (top > middleY * 1.8 && top > bottom * 1.7 && pixelCount < 75) {
-    return { rank: "7", confidence: 0.9 };
+  if (top > middleY * 1.8 && top > bottom * 1.6 && pixelCount < 180) {
+    return { rank: "7", confidence: 0.88 };
   }
-  if (right > (left + middleX) * 0.85 && top > middleY * 1.4 && bottom > middleY * 1.4 && pixelCount > 70) {
+  if (right > (left + middleX) * 0.85 && top > middleY * 1.25 && bottom > middleY * 1.25 && pixelCount > 70) {
     return { rank: "Q", confidence: 0.86 };
   }
-  if (right > left * 1.8 && bottom >= top * 1.6) {
+  if (right > left * 1.8 && bottom >= top * 1.25) {
     return { rank: "J", confidence: 0.86 };
   }
   if (width > 22 && pixelCount < 42) {
@@ -263,8 +268,8 @@ function classifyRank(features) {
   return { rank: "K", confidence: 0.62 };
 }
 
-function classifyRankFromSlot(imageData, rect, suit) {
-  const mask = rankPoints(imageData, rect, suit);
+function classifyRankCandidate(imageData, rect, suit, crop) {
+  const mask = rankPoints(imageData, rect, suit, crop);
   if (!mask) return { rank: null, confidence: 0 };
 
   const { width, height, points } = mask;
@@ -287,9 +292,32 @@ function classifyRankFromSlot(imageData, rect, suit) {
   return classifyRank(features);
 }
 
-function recognizeSlot(imageData, rect) {
+function betterRankCandidate(current, candidate) {
+  if (!current?.rank) return candidate;
+  if (!candidate?.rank) return current;
+  if (current.confidence >= 0.85 && current.rank !== candidate.rank) return current;
+  return candidate.confidence > current.confidence ? candidate : current;
+}
+
+function classifyRankFromSlot(imageData, rect, suit, zone) {
+  const crops = zone === "discard" ? DISCARD_RANK_CROPS : GRID_RANK_CROPS;
+  const candidates = crops.map((crop) => classifyRankCandidate(imageData, rect, suit, crop));
+
+  if (zone === "discard") {
+    const [edgeCandidate, normalCandidate] = candidates;
+    if (edgeCandidate?.rank === "J" && edgeCandidate.confidence >= 0.8) return edgeCandidate;
+    return normalCandidate?.rank ? normalCandidate : edgeCandidate;
+  }
+
+  return candidates.reduce((best, candidate) => betterRankCandidate(best, candidate), null) ?? {
+    rank: null,
+    confidence: 0,
+  };
+}
+
+function recognizeSlot(imageData, rect, zone) {
   const suitResult = classifySuit(imageData, rect);
-  const rankResult = classifyRankFromSlot(imageData, rect, suitResult.suit);
+  const rankResult = classifyRankFromSlot(imageData, rect, suitResult.suit, zone);
   return {
     cardId: rankResult.rank ? `${rankResult.rank}${suitResult.suit}` : null,
     rank: rankResult.rank,
@@ -442,16 +470,21 @@ export async function recognizeFantasylandScreenshot(file) {
 
   const imageData = context.getImageData(0, 0, width, height);
   const rects = slotRects(width, height);
-  const gridSlots = rects.grid.map((rect) => recognizeSlot(imageData, rect));
-  const discardSlots = rects.discard.map((rect) => recognizeSlot(imageData, rect));
+  const gridSlots = rects.grid.map((rect) => recognizeSlot(imageData, rect, "grid"));
+  const discardSlots = rects.discard.map((rect) => recognizeSlot(imageData, rect, "discard"));
   const displayedScore = recognizeDisplayedScore(imageData);
   const cards = [...gridSlots, ...discardSlots].map((slot) => slot.cardId);
-  const missing = cards.filter(Boolean).length !== 20;
-  const duplicates = new Set(cards.filter(Boolean)).size !== cards.filter(Boolean).length;
+  const recognizedCards = cards.filter(Boolean);
+  const missing = recognizedCards.length !== 20;
+  const duplicates = new Set(recognizedCards).size !== recognizedCards.length;
   const confidence = Math.min(...[...gridSlots, ...discardSlots].map((slot) => slot.confidence));
-
-  if (missing || duplicates || confidence < 0.6) {
-    throw new Error("I could not confidently read all 20 cards. Please adjust them manually.");
+  let warning = "";
+  if (missing) {
+    warning = `I read ${recognizedCards.length}/20 cards from the screenshot. Please adjust the rest manually.`;
+  } else if (duplicates) {
+    warning = "I read 20 cards from the screenshot, but some were duplicates. Please adjust them manually.";
+  } else if (confidence < 0.6) {
+    warning = "I read 20 cards from the screenshot, but one or more were low confidence. Please double-check them.";
   }
 
   return {
@@ -459,5 +492,7 @@ export async function recognizeFantasylandScreenshot(file) {
     discard: discardSlots.map((slot) => slot.cardId),
     confidence,
     displayedScore,
+    complete: !warning,
+    warning,
   };
 }
