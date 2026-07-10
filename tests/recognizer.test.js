@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 
 import { __recognizerTestHooks } from "../src/screenshotRecognizer.js";
 
-const { classifyRank, classifyScoreDigit, displayedScoreRects } = __recognizerTestHooks;
+const { classifyRank, classifyScoreDigit, displayedScoreRects, displayedScoreTotalFromDigits } =
+  __recognizerTestHooks;
 
 const rankShapes = {
   "6": {
@@ -216,6 +217,12 @@ const scoreDigitShapes = {
 for (const [digit, shape] of Object.entries(scoreDigitShapes)) {
   assert.equal(classifyScoreDigit(shape), digit, `expected score digit ${digit}`);
 }
+
+assert.equal(displayedScoreTotalFromDigits("14880"), 14880);
+assert.equal(displayedScoreTotalFromDigits("8790"), 8790);
+assert.equal(displayedScoreTotalFromDigits("822272222"), null);
+assert.equal(displayedScoreTotalFromDigits("10"), null);
+assert.equal(displayedScoreTotalFromDigits("99999"), null);
 
 function scaledGridRects(scale) {
   const base = [

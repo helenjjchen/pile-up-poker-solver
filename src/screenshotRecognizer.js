@@ -37,6 +37,7 @@ const DISCARD_RANK_CROPS = [
   { xStart: 0.11, xEnd: 0.34, yStart: 0.03, yEnd: 0.18 },
 ];
 const CARD_COLOR_DISTANCE_LIMIT = 13000;
+const MAX_DISPLAYED_SCORE_TOTAL = 40000;
 
 function colorDistance(color, reference) {
   return (
@@ -1065,12 +1066,62 @@ function classifyScoreDigit(features) {
   return null;
 }
 
-function readScoreDigitsFromBoxes(boxes) {
-  return boxes
+function displayedScoreTotalFromDigits(digits) {
+  if (!/^\d{3,5}$/.test(digits)) return null;
+  const value = Number(digits);
+  if (!Number.isFinite(value) || value > MAX_DISPLAYED_SCORE_TOTAL) return null;
+  return value;
+}
+
+function groupTextBoxesByRow(boxes) {
+  const rows = [];
+  const medianHeight = median(boxes.map((box) => box.bottom - box.top));
+  const tolerance = Math.max(4, medianHeight * 0.55);
+
+  boxes
+    .map((box) => ({
+      ...box,
+      centerY: (box.top + box.bottom) / 2,
+    }))
+    .sort((a, b) => a.centerY - b.centerY)
+    .forEach((box) => {
+      const row = rows.find((entry) => Math.abs(box.centerY - entry.centerY) <= tolerance);
+      if (row) {
+        row.boxes.push(box);
+        row.centerY = median(row.boxes.map((entry) => entry.centerY));
+      } else {
+        rows.push({ centerY: box.centerY, boxes: [box] });
+      }
+    });
+
+  return rows;
+}
+
+function readScoreTotalFromBoxes(boxes) {
+  const digitBoxes = boxes
     .filter((box) => box.bottom - box.top >= 8 && box.right - box.left >= 3)
-    .map((box) => classifyScoreDigit(scoreDigitFeatures(box)))
-    .filter(Boolean)
-    .join("");
+    .map((box) => ({
+      ...box,
+      digit: classifyScoreDigit(scoreDigitFeatures(box)),
+    }))
+    .filter((entry) => entry.digit);
+  const rows = groupTextBoxesByRow(digitBoxes);
+  const candidates = rows
+    .map((row) => {
+      const rowDigits = row.boxes
+        .sort((a, b) => a.left - b.left)
+        .map((box) => box.digit)
+        .filter(Boolean)
+        .join("");
+      return {
+        centerY: row.centerY,
+        value: displayedScoreTotalFromDigits(rowDigits),
+      };
+    })
+    .filter((candidate) => candidate.value !== null)
+    .sort((a, b) => b.centerY - a.centerY);
+
+  return candidates[0]?.value ?? null;
 }
 
 function displayedScoreRects(imageData, rects) {
@@ -1142,11 +1193,11 @@ function recognizeDisplayedScore(imageData, rects) {
     totalRect.right - totalRect.left,
     totalRect.bottom - totalRect.top,
   );
-  const totalDigits = readScoreDigitsFromBoxes(totalBoxes);
+  const total = readScoreTotalFromBoxes(totalBoxes);
 
   return {
     handCount: handDigits === "10" ? 10 : null,
-    total: totalDigits.length >= 3 ? Number(totalDigits) : null,
+    total,
   };
 }
 
@@ -1258,5 +1309,6 @@ export async function recognizeFantasylandScreenshot(file) {
 export const __recognizerTestHooks = {
   classifyRank,
   classifyScoreDigit,
+  displayedScoreTotalFromDigits,
   displayedScoreRects,
 };
