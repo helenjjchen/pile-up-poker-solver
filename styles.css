@@ -858,6 +858,10 @@ h2 {
   padding-bottom: 4px;
 }
 
+.solutions-row:empty {
+  display: none;
+}
+
 .solutions-row.has-layout-drawer {
   min-height: 58px;
 }
@@ -878,6 +882,7 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-2);
+  color: var(--ink);
   font-weight: 850;
 }
 
@@ -1103,7 +1108,7 @@ h2 {
   }
 
   .board-area {
-    grid-template-columns: 60px minmax(0, 1fr);
+    grid-template-columns: 52px minmax(0, 1fr);
     gap: 8px;
   }
 
@@ -1122,7 +1127,20 @@ h2 {
   }
 
   .discard-stack .playing-card {
-    min-height: 66px;
+    min-height: 58px;
+  }
+
+  .discard-stack .playing-card .corner {
+    font-size: 0.72rem;
+  }
+
+  .discard-stack .playing-card .big-rank {
+    font-size: clamp(1.4rem, 6vw, 2rem);
+  }
+
+  .playing-card.empty {
+    aspect-ratio: 0.86;
+    min-height: 0;
   }
 
   .playing-card .corner {
