@@ -210,8 +210,7 @@ function attemptOptionGroups() {
 function renderAttemptOption(cardId, currentCardId, usedCards) {
   const selectedAttr = cardId === currentCardId ? " selected" : "";
   const disabledAttr = usedCards.has(cardId) && cardId !== currentCardId ? " disabled" : "";
-  const suitClass = SUIT_META[CARD_BY_ID[cardId].suit].colorClass;
-  return `<option class="${suitClass}" value="${cardId}"${selectedAttr}${disabledAttr}>${cardLabel(cardId)}</option>`;
+  return `<option value="${cardId}"${selectedAttr}${disabledAttr}>${cardLabel(cardId)}</option>`;
 }
 
 function renderAttemptOptionGroup(group, currentCardId, usedCards) {

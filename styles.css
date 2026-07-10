@@ -472,31 +472,34 @@ h2 {
   width: 100%;
   min-height: 34px;
   border: 1px solid var(--line);
+  border-left-width: 4px;
   border-radius: 6px;
   background: var(--surface);
   color: var(--ink);
   font-size: 0.78rem;
   font-weight: 800;
+  padding-left: 8px;
 }
 
-.attempt-slot select.suit-hearts,
-.attempt-slot select option.suit-hearts {
-  color: var(--red);
+.attempt-slot select.suit-hearts {
+  border-left-color: var(--red);
 }
 
-.attempt-slot select.suit-spades,
-.attempt-slot select option.suit-spades {
-  color: var(--blue);
+.attempt-slot select.suit-spades {
+  border-left-color: var(--blue);
 }
 
-.attempt-slot select.suit-clubs,
-.attempt-slot select option.suit-clubs {
-  color: var(--green);
+.attempt-slot select.suit-clubs {
+  border-left-color: var(--green);
 }
 
-.attempt-slot select.suit-diamonds,
-.attempt-slot select option.suit-diamonds {
-  color: var(--orange);
+.attempt-slot select.suit-diamonds {
+  border-left-color: var(--orange);
+}
+
+.attempt-slot select option {
+  color: var(--ink);
+  background: var(--surface);
 }
 
 .attempt-slot select option.attempt-option-group {
