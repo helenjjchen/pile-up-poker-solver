@@ -910,6 +910,61 @@ function componentBounds(points, width, height) {
     .sort((a, b) => a.left - b.left);
 }
 
+function textComponentBoxes(points, width, height) {
+  const filled = new Set(points.map(([x, y]) => `${x},${y}`));
+  const components = [];
+  const offsets = [
+    [-1, -1],
+    [0, -1],
+    [1, -1],
+    [-1, 0],
+    [1, 0],
+    [-1, 1],
+    [0, 1],
+    [1, 1],
+  ];
+
+  while (filled.size) {
+    const first = filled.values().next().value;
+    filled.delete(first);
+    const stack = [first.split(",").map(Number)];
+    const component = [];
+
+    while (stack.length) {
+      const [x, y] = stack.pop();
+      component.push([x, y]);
+
+      offsets.forEach(([dx, dy]) => {
+        const nextX = x + dx;
+        const nextY = y + dy;
+        if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height) return;
+        const key = `${nextX},${nextY}`;
+        if (!filled.has(key)) return;
+        filled.delete(key);
+        stack.push([nextX, nextY]);
+      });
+    }
+
+    if (component.length <= 2) continue;
+    const xs = component.map(([x]) => x);
+    const ys = component.map(([, y]) => y);
+    const left = Math.min(...xs);
+    const top = Math.min(...ys);
+    const right = Math.max(...xs) + 1;
+    const bottom = Math.max(...ys) + 1;
+    components.push({
+      left,
+      top,
+      right,
+      bottom,
+      size: component.length,
+      points: component.map(([x, y]) => [x - left, y - top]),
+    });
+  }
+
+  return components.sort((a, b) => a.left - b.left);
+}
+
 function readSimpleDigitsFromBounds(bounds) {
   const digits = [];
   for (const box of bounds) {
@@ -927,31 +982,171 @@ function readSimpleDigitsFromBounds(bounds) {
   return digits.join("");
 }
 
-function recognizeDisplayedScore(imageData) {
-  const width = imageData.width;
-  const height = imageData.height;
-  const handRect = clampRect(
-    {
-      left: width * 0.76,
-      top: height * 0.145,
-      right: width * 0.94,
-      bottom: height * 0.18,
-    },
+function scoreDigitFeatures(box) {
+  const width = box.right - box.left;
+  const height = box.bottom - box.top;
+  const points = box.points ?? [];
+  const holes = holeInfo(points, width, height).sort((a, b) => b.size - a.size);
+
+  return {
     width,
     height,
-  );
+    pixelCount: points.length || box.size,
+    holes,
+    left: points.filter(([x]) => x < width * 0.33).length,
+    middleX: points.filter(([x]) => x >= width * 0.33 && x < width * 0.66).length,
+    right: points.filter(([x]) => x >= width * 0.66).length,
+    top: points.filter(([, y]) => y < height * 0.25).length,
+    middleY: points.filter(([, y]) => y >= height * 0.38 && y < height * 0.62).length,
+    bottom: points.filter(([, y]) => y >= height * 0.75).length,
+    upperLeft: points.filter(([x, y]) => x < width * 0.42 && y < height * 0.5).length,
+    upperRight: points.filter(([x, y]) => x >= width * 0.58 && y < height * 0.5).length,
+    lowerLeft: points.filter(([x, y]) => x < width * 0.42 && y >= height * 0.5).length,
+    lowerRight: points.filter(([x, y]) => x >= width * 0.58 && y >= height * 0.5).length,
+  };
+}
+
+function classifyScoreDigit(features) {
+  const {
+    width,
+    height,
+    pixelCount,
+    holes,
+    left,
+    middleX,
+    right,
+    top,
+    middleY,
+    bottom,
+    upperLeft,
+    upperRight,
+    lowerLeft,
+    lowerRight,
+  } = features;
+
+  if (height < 8 || pixelCount < 12) return null;
+  if (width <= Math.max(4, height * 0.34)) return "1";
+  if (holes.length >= 2) return "8";
+
+  if (holes.length === 1) {
+    const [hole] = holes;
+    if (hole.y < 0.36) return "9";
+    if (hole.y > 0.58) return "6";
+    return "0";
+  }
+
+  if (top > middleY * 2 && top > bottom * 2 && lowerLeft < upperRight * 0.45) return "7";
+  if (middleY > top * 0.85 && middleY > bottom * 1.2 && upperLeft > lowerLeft * 1.4) return "4";
+
+  const expected = {
+    "2": [1, 1, 1, 0, 1, 1, 0],
+    "3": [1, 1, 1, 0, 1, 0, 1],
+    "5": [1, 1, 1, 1, 0, 0, 1],
+  };
+  const observed = [
+    top > 0,
+    middleY > 0,
+    bottom > 0,
+    upperLeft > upperRight * 0.55,
+    upperRight > upperLeft * 0.55,
+    lowerLeft > lowerRight * 0.55,
+    lowerRight > lowerLeft * 0.55,
+  ].map(Boolean);
+  const best = Object.entries(expected)
+    .map(([digit, pattern]) => ({
+      digit,
+      distance: pattern.reduce((sum, bit, index) => sum + (Boolean(bit) === observed[index] ? 0 : 1), 0),
+    }))
+    .sort((a, b) => a.distance - b.distance)[0];
+
+  if (best?.distance <= 2) return best.digit;
+  if (right > left * 1.4 && bottom >= top * 0.6) return "3";
+  if (left > right * 1.2 && bottom >= top * 0.6) return "5";
+  return null;
+}
+
+function readScoreDigitsFromBoxes(boxes) {
+  return boxes
+    .filter((box) => box.bottom - box.top >= 8 && box.right - box.left >= 3)
+    .map((box) => classifyScoreDigit(scoreDigitFeatures(box)))
+    .filter(Boolean)
+    .join("");
+}
+
+function displayedScoreRects(imageData, rects) {
+  if (rects?.grid?.length >= 16) {
+    const gridRight = Math.max(...rects.grid.map((rect) => rect.right));
+    const gridTop = Math.min(...rects.grid.map((rect) => rect.top));
+    const cardWidth = median(rects.grid.map(rectWidth));
+    const cardHeight = median(rects.grid.map(rectHeight));
+    return {
+      hand: clampRect(
+        {
+          left: gridRight - cardWidth * 1.25,
+          top: gridTop - cardHeight * 0.52,
+          right: gridRight + cardWidth * 0.1,
+          bottom: gridTop - cardHeight * 0.3,
+        },
+        imageData.width,
+        imageData.height,
+      ),
+      total: clampRect(
+        {
+          left: gridRight - cardWidth * 1.35,
+          top: gridTop - cardHeight * 0.34,
+          right: gridRight + cardWidth * 0.22,
+          bottom: gridTop - cardHeight * 0.07,
+        },
+        imageData.width,
+        imageData.height,
+      ),
+    };
+  }
+
+  const width = imageData.width;
+  const height = imageData.height;
+  return {
+    hand: clampRect(
+      {
+        left: width * 0.76,
+        top: height * 0.145,
+        right: width * 0.94,
+        bottom: height * 0.18,
+      },
+      width,
+      height,
+    ),
+    total: clampRect(
+      {
+        left: width * 0.74,
+        top: height * 0.17,
+        right: width * 0.94,
+        bottom: height * 0.2,
+      },
+      width,
+      height,
+    ),
+  };
+}
+
+function recognizeDisplayedScore(imageData, rects) {
+  const { hand: handRect, total: totalRect } = displayedScoreRects(imageData, rects);
   const handBounds = componentBounds(
     brightPixelMask(imageData, handRect),
     handRect.right - handRect.left,
     handRect.bottom - handRect.top,
   );
   const handDigits = readSimpleDigitsFromBounds(handBounds);
+  const totalBoxes = textComponentBoxes(
+    brightPixelMask(imageData, totalRect),
+    totalRect.right - totalRect.left,
+    totalRect.bottom - totalRect.top,
+  );
+  const totalDigits = readScoreDigitsFromBoxes(totalBoxes);
 
   return {
     handCount: handDigits === "10" ? 10 : null,
-    // The visible dollar total is a useful future cross-check, but false reads
-    // are worse than no read because they can reject a good upload.
-    total: null,
+    total: totalDigits.length >= 3 ? Number(totalDigits) : null,
   };
 }
 
@@ -1016,7 +1211,7 @@ export function recognizeFantasylandImageData(imageData) {
     rects.discard[index] ? recognizeSlot(imageData, rects.discard[index], "discard") : emptySlot(),
   );
   enforceDeckConstraints([...gridSlots, ...discardSlots]);
-  const displayedScore = recognizeDisplayedScore(imageData);
+  const displayedScore = recognizeDisplayedScore(imageData, rects);
   const cards = [...gridSlots, ...discardSlots].map((slot) => slot.cardId);
   const recognizedCards = cards.filter(Boolean);
   const missing = recognizedCards.length !== 20;
@@ -1062,4 +1257,6 @@ export async function recognizeFantasylandScreenshot(file) {
 
 export const __recognizerTestHooks = {
   classifyRank,
+  classifyScoreDigit,
+  displayedScoreRects,
 };

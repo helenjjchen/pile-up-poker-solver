@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import { __recognizerTestHooks } from "../src/screenshotRecognizer.js";
 
-const { classifyRank } = __recognizerTestHooks;
+const { classifyRank, classifyScoreDigit, displayedScoreRects } = __recognizerTestHooks;
 
 const rankShapes = {
   "6": {
@@ -142,5 +142,108 @@ const rankShapes = {
 for (const [rank, shape] of Object.entries(rankShapes)) {
   assert.equal(classifyRank(shape).rank, rank, `expected ${rank}`);
 }
+
+const scoreDigitShapes = {
+  "8": {
+    width: 10,
+    height: 20,
+    pixelCount: 95,
+    holes: [
+      { size: 9, x: 0.256, y: 0.261 },
+      { size: 9, x: 0.644, y: 0.661 },
+    ],
+    left: 29,
+    middleX: 45,
+    right: 21,
+    top: 25,
+    middleY: 20,
+    bottom: 17,
+    upperLeft: 19,
+    upperRight: 8,
+    lowerLeft: 10,
+    lowerRight: 18,
+  },
+  "7": {
+    width: 11,
+    height: 17,
+    pixelCount: 49,
+    holes: [],
+    left: 8,
+    middleX: 25,
+    right: 16,
+    top: 25,
+    middleY: 7,
+    bottom: 5,
+    upperLeft: 9,
+    upperRight: 21,
+    lowerLeft: 5,
+    lowerRight: 2,
+  },
+  "9": {
+    width: 12,
+    height: 17,
+    pixelCount: 74,
+    holes: [{ size: 52, x: 0.458, y: 0.265 }],
+    left: 24,
+    middleX: 17,
+    right: 33,
+    top: 16,
+    middleY: 24,
+    bottom: 17,
+    upperLeft: 17,
+    upperRight: 18,
+    lowerLeft: 11,
+    lowerRight: 15,
+  },
+  "0": {
+    width: 12,
+    height: 17,
+    pixelCount: 77,
+    holes: [{ size: 94, x: 0.458, y: 0.449 }],
+    left: 32,
+    middleX: 14,
+    right: 31,
+    top: 20,
+    middleY: 16,
+    bottom: 18,
+    upperLeft: 19,
+    upperRight: 16,
+    lowerLeft: 17,
+    lowerRight: 15,
+  },
+};
+
+for (const [digit, shape] of Object.entries(scoreDigitShapes)) {
+  assert.equal(classifyScoreDigit(shape), digit, `expected score digit ${digit}`);
+}
+
+function scaledGridRects(scale) {
+  const base = [
+    [80, 100, 180, 250],
+    [190, 100, 290, 250],
+    [300, 100, 400, 250],
+    [410, 100, 510, 250],
+  ];
+  return Array.from({ length: 4 }, (_, row) =>
+    base.map(([left, top, right, bottom]) => ({
+      left: left * scale,
+      top: (top + row * 160) * scale,
+      right: right * scale,
+      bottom: (bottom + row * 160) * scale,
+    })),
+  ).flat();
+}
+
+const normalRects = displayedScoreRects({ width: 640, height: 1200 }, { grid: scaledGridRects(1) });
+const doubleRects = displayedScoreRects({ width: 1280, height: 2400 }, { grid: scaledGridRects(2) });
+
+function assertApproximatelyEqual(actual, expected) {
+  assert.ok(Math.abs(actual - expected) <= 1, `${actual} should be within 1px of ${expected}`);
+}
+
+assertApproximatelyEqual(doubleRects.total.left, normalRects.total.left * 2);
+assertApproximatelyEqual(doubleRects.total.top, normalRects.total.top * 2);
+assertApproximatelyEqual(doubleRects.total.right, normalRects.total.right * 2);
+assertApproximatelyEqual(doubleRects.total.bottom, normalRects.total.bottom * 2);
 
 console.log("recognizer tests passed");
