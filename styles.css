@@ -472,29 +472,31 @@ h2 {
   width: 100%;
   min-height: 34px;
   border: 1px solid var(--line);
-  border-left-width: 4px;
   border-radius: 6px;
   background: var(--surface);
   color: var(--ink);
   font-size: 0.78rem;
   font-weight: 800;
-  padding-left: 8px;
 }
 
 .attempt-slot select.suit-hearts {
-  border-left-color: var(--red);
+  border-color: var(--red);
+  background: rgba(255, 157, 162, 0.08);
 }
 
 .attempt-slot select.suit-spades {
-  border-left-color: var(--blue);
+  border-color: var(--blue);
+  background: rgba(88, 174, 234, 0.08);
 }
 
 .attempt-slot select.suit-clubs {
-  border-left-color: var(--green);
+  border-color: var(--green);
+  background: rgba(134, 169, 120, 0.08);
 }
 
 .attempt-slot select.suit-diamonds {
-  border-left-color: var(--orange);
+  border-color: var(--orange);
+  background: rgba(245, 184, 87, 0.08);
 }
 
 .attempt-slot select option {
