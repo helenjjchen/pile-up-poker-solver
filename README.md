@@ -35,6 +35,12 @@ Use `server.mjs`/`pnpm dev` rather than a plain static file server. The app stil
 pnpm test
 ```
 
+The screenshot-recognition suite includes labelled phone screenshots in
+`tests/fixtures/`. It verifies every grid and tray card, including tilted tray
+cards and the cropped-board layout. Add each newly corrected screenshot there
+before changing recognition logic so recognition accuracy is measured against a
+growing regression set rather than one-off examples.
+
 ## GitHub Pages
 
 This repo is set up for GitHub Pages with `.github/workflows/pages.yml`. After pushing to GitHub:

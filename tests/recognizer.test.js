@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import { __recognizerTestHooks } from "../src/screenshotRecognizer.js";
 
-const { classifyRank, classifyScoreDigit, displayedScoreRects, displayedScoreTotalFromDigits } =
+const { classifyRank, classifyScoreDigit, displayedScoreRects, displayedScoreTotalFromDigits, resolveDeckConflicts } =
   __recognizerTestHooks;
 
 const rankShapes = {
@@ -223,6 +223,29 @@ assert.equal(displayedScoreTotalFromDigits("8790"), 8790);
 assert.equal(displayedScoreTotalFromDigits("822272222"), null);
 assert.equal(displayedScoreTotalFromDigits("10"), null);
 assert.equal(displayedScoreTotalFromDigits("99999"), null);
+
+const conflictingSpades = [
+  {
+    cardId: "AS",
+    rank: "A",
+    suit: "S",
+    confidence: 0.98,
+    alternatives: [{ cardId: "KS", rank: "K", suit: "S", confidence: 0.6 }],
+  },
+  {
+    cardId: "AS",
+    rank: "A",
+    suit: "S",
+    confidence: 0.97,
+    alternatives: [{ cardId: "QS", rank: "Q", suit: "S", confidence: 0.93 }],
+  },
+];
+assert.equal(resolveDeckConflicts(conflictingSpades), true);
+assert.deepEqual(
+  conflictingSpades.map((slot) => slot.cardId),
+  ["AS", "QS"],
+  "deck-aware assignment should repair a duplicate using the strongest valid alternatives",
+);
 
 function scaledGridRects(scale) {
   const base = [

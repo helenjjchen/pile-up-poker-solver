@@ -1,3 +1,5 @@
+import { RANK_GLYPH_MASK_SIZE, RANK_GLYPH_TEMPLATES } from "./rankGlyphTemplates.js";
+
 const SUIT_REFERENCES = {
   H: [245, 151, 157],
   S: [83, 172, 232],
@@ -36,6 +38,13 @@ const DISCARD_RANK_CROPS = [
   { xStart: 0.04, xEnd: 0.22, yStart: 0.03, yEnd: 0.22 },
   { xStart: 0.11, xEnd: 0.34, yStart: 0.03, yEnd: 0.18 },
 ];
+const TEMPLATE_GRID_RANK_CROP = { xStart: 0.08, xEnd: 0.43, yStart: 0.055, yEnd: 0.25 };
+const TEMPLATE_DISCARD_RANK_CROPS = [
+  { xStart: 0.04, xEnd: 0.2, yStart: 0, yEnd: 0.2 },
+  { xStart: 0.08, xEnd: 0.2, yStart: -0.02, yEnd: 0.2 },
+  { xStart: 0.02, xEnd: 0.25, yStart: -0.02, yEnd: 0.22 },
+];
+const MIN_TEMPLATE_RANK_SCORE = 0.52;
 const CARD_COLOR_DISTANCE_LIMIT = 13000;
 const MAX_DISPLAYED_SCORE_TOTAL = 40000;
 
@@ -199,6 +208,130 @@ function rankPoints(imageData, rect, suit, crop) {
     height: maxY - minY + 1,
     points: rawPoints.map(([x, y]) => [x - minX, y - minY]),
   };
+}
+
+function isRankInk(color, reference) {
+  const max = Math.max(...color);
+  const min = Math.min(...color);
+  return max >= 100 && max - min >= 10 && colorDistance(color, reference) < 14000;
+}
+
+function cardTopEdgeLine(imageData, rect) {
+  const points = [];
+  const scanBottom = Math.min(rect.bottom, rect.top + Math.min(120, rectHeight(rect) * 0.4));
+
+  for (let x = rect.left; x < rect.right; x += 1) {
+    let y = rect.top;
+    for (; y < scanBottom; y += 1) {
+      const color = pixelAt(imageData, x, y);
+      // Card surfaces are near-neutral white. This excludes the colored edge,
+      // suit art, and the dark game background while retaining the first pixel
+      // inside a tilted card.
+      if (Math.min(...color) > 200 && Math.max(...color) - Math.min(...color) < 24) break;
+    }
+    if (y < scanBottom) points.push([x, y]);
+  }
+
+  const trim = Math.max(3, Math.floor(points.length * 0.05));
+  const usable = points.slice(trim, Math.max(trim, points.length - trim));
+  if (usable.length < Math.max(18, rectWidth(rect) * 0.45)) return null;
+
+  const meanX = usable.reduce((sum, [x]) => sum + x, 0) / usable.length;
+  const meanY = usable.reduce((sum, [, y]) => sum + y, 0) / usable.length;
+  const denominator = usable.reduce((sum, [x]) => sum + (x - meanX) ** 2, 0);
+  if (!denominator) return null;
+  const slope = usable.reduce((sum, [x, y]) => sum + (x - meanX) * (y - meanY), 0) / denominator;
+  return { intercept: meanY - slope * meanX, slope };
+}
+
+function rankPointsFromCardFrame(imageData, rect, suit, crop, topEdge) {
+  if (!topEdge) return null;
+  const reference = SUIT_REFERENCES[suit];
+  const width = rectWidth(rect);
+  const height = rectHeight(rect);
+  const xStart = Math.floor(width * crop.xStart);
+  const xEnd = Math.ceil(width * crop.xEnd);
+  const yStart = Math.floor(height * crop.yStart);
+  const yEnd = Math.ceil(height * crop.yEnd);
+  const rawPoints = [];
+
+  for (let localY = yStart; localY < yEnd; localY += 1) {
+    for (let localX = xStart; localX < xEnd; localX += 1) {
+      const x = Math.round(rect.left + localX);
+      const y = Math.round(topEdge.intercept + topEdge.slope * x + localY);
+      if (x < 0 || x >= imageData.width || y < 0 || y >= imageData.height) continue;
+      if (isRankInk(pixelAt(imageData, x, y), reference)) rawPoints.push([localX, localY]);
+    }
+  }
+
+  return normalizePoints(rawPoints);
+}
+
+function normalizedRankMask(mask) {
+  if (!mask?.points?.length) return null;
+  const width = RANK_GLYPH_MASK_SIZE.width;
+  const height = RANK_GLYPH_MASK_SIZE.height;
+  const filled = new Set(mask.points.map(([x, y]) => `${x},${y}`));
+  const normalized = new Uint8Array(width * height);
+
+  for (let y = 0; y < height; y += 1) {
+    const yStart = Math.floor((y * mask.height) / height);
+    const yEnd = Math.max(yStart + 1, Math.ceil(((y + 1) * mask.height) / height));
+    for (let x = 0; x < width; x += 1) {
+      const xStart = Math.floor((x * mask.width) / width);
+      const xEnd = Math.max(xStart + 1, Math.ceil(((x + 1) * mask.width) / width));
+      let hit = false;
+      for (let sourceY = yStart; sourceY < yEnd && !hit; sourceY += 1) {
+        for (let sourceX = xStart; sourceX < xEnd; sourceX += 1) {
+          if (filled.has(`${sourceX},${sourceY}`)) {
+            hit = true;
+            break;
+          }
+        }
+      }
+      normalized[y * width + x] = hit ? 1 : 0;
+    }
+  }
+
+  return normalized;
+}
+
+function rankTemplateScore(mask, template) {
+  let intersection = 0;
+  let maskCount = 0;
+  let templateCount = 0;
+  for (let index = 0; index < mask.length; index += 1) {
+    maskCount += mask[index];
+    templateCount += template[index];
+    intersection += mask[index] & template[index];
+  }
+  return maskCount && templateCount ? (2 * intersection) / (maskCount + templateCount) : 0;
+}
+
+function templateRankCandidates(imageData, rect, suit, zone) {
+  const masks = [];
+  const regularCrops = zone === "discard" ? DISCARD_RANK_CROPS : [TEMPLATE_GRID_RANK_CROP, ...GRID_RANK_CROPS];
+  regularCrops.forEach((crop) => masks.push(rankPoints(imageData, rect, suit, crop)));
+
+  if (zone === "discard") {
+    const topEdge = cardTopEdgeLine(imageData, rect);
+    TEMPLATE_DISCARD_RANK_CROPS.forEach((crop) => {
+      masks.push(rankPointsFromCardFrame(imageData, rect, suit, crop, topEdge));
+    });
+  }
+
+  const candidates = new Map();
+  masks.forEach((rawMask) => {
+    const mask = normalizedRankMask(removeArtifactComponents(rawMask ?? { points: [], width: 0, height: 0 }));
+    if (!mask) return;
+    Object.entries(RANK_GLYPH_TEMPLATES).forEach(([rank, template]) => {
+      const score = rankTemplateScore(mask, template);
+      const existing = candidates.get(rank);
+      if (!existing || score > existing.confidence) candidates.set(rank, { rank, confidence: score });
+    });
+  });
+
+  return [...candidates.values()].sort((a, b) => b.confidence - a.confidence);
 }
 
 function connectedComponents(points, width, height) {
@@ -438,17 +571,27 @@ function classifyRankCandidate(imageData, rect, suit, crop) {
 }
 
 function classifyRankFromSlot(imageData, rect, suit, zone) {
+  const templateCandidates = templateRankCandidates(imageData, rect, suit, zone);
+  const bestTemplate = templateCandidates[0];
+  if (bestTemplate?.confidence >= MIN_TEMPLATE_RANK_SCORE) {
+    return {
+      ...bestTemplate,
+      alternatives: templateCandidates.slice(1),
+    };
+  }
+
   const crops = zone === "discard" ? DISCARD_RANK_CROPS : GRID_RANK_CROPS;
   const candidates = crops.map((crop) => classifyRankCandidate(imageData, rect, suit, crop));
   const rankedCandidates = candidates
     .filter((candidate) => candidate?.rank)
     .sort((a, b) => b.confidence - a.confidence);
   const bestCandidate = rankedCandidates[0] ?? { rank: null, confidence: 0 };
-  const alternatives = rankedCandidates.filter((candidate) => candidate.rank !== bestCandidate.rank);
-
-  if (zone === "discard") {
-    return { ...bestCandidate, alternatives };
-  }
+  const alternatives = rankedCandidates
+    .filter((candidate) => candidate.rank !== bestCandidate.rank)
+    .concat(templateCandidates.filter((candidate) => candidate.rank !== bestCandidate.rank))
+    .sort((a, b) => b.confidence - a.confidence)
+    .filter((candidate, index, all) => all.findIndex((entry) => entry.rank === candidate.rank) === index)
+    .slice(0, 6);
 
   return { ...bestCandidate, alternatives };
 }
@@ -511,6 +654,78 @@ function applyCandidate(slot, candidate) {
   slot.rank = candidate.rank;
   slot.suit = candidate.suit;
   slot.confidence = candidate.confidence;
+}
+
+function rankedSlotCandidates(slot) {
+  const candidates = [
+    slot.cardId
+      ? { cardId: slot.cardId, rank: slot.rank, suit: slot.suit, confidence: slot.confidence }
+      : null,
+    ...(slot.alternatives ?? []),
+  ].filter((candidate) => candidate?.cardId && candidate.rank && candidate.suit);
+
+  return candidates
+    .sort((a, b) => b.confidence - a.confidence)
+    .filter((candidate, index, all) => all.findIndex((entry) => entry.cardId === candidate.cardId) === index);
+}
+
+function bestSuitAssignment(slots) {
+  const entries = slots
+    .map((slot) => ({ slot, candidates: rankedSlotCandidates(slot) }))
+    .filter((entry) => entry.candidates.length)
+    .sort((a, b) => a.candidates.length - b.candidates.length);
+  if (entries.length !== slots.length) return null;
+
+  let best = null;
+  const usedCards = new Set();
+  const chosen = [];
+
+  function visit(index, score) {
+    if (index === entries.length) {
+      if (!best || score > best.score) best = { score, chosen: [...chosen] };
+      return;
+    }
+
+    const { slot, candidates } = entries[index];
+    for (const candidate of candidates) {
+      if (usedCards.has(candidate.cardId)) continue;
+      usedCards.add(candidate.cardId);
+      chosen.push({ slot, candidate });
+      // A logarithmic score lets the strongest visual evidence dominate while
+      // still giving the deck's no-duplicate rule a chance to correct a close
+      // call instead of blanking a card.
+      visit(index + 1, score + Math.log(Math.max(0.01, candidate.confidence)));
+      chosen.pop();
+      usedCards.delete(candidate.cardId);
+    }
+  }
+
+  visit(0, 0);
+  return best;
+}
+
+function resolveDeckConflicts(slots) {
+  const recognizedCards = slots.map((slot) => slot.cardId).filter(Boolean);
+  const needsResolution = recognizedCards.length !== slots.length || new Set(recognizedCards).size !== recognizedCards.length;
+  if (!needsResolution) return false;
+
+  const slotsBySuit = new Map();
+  slots.forEach((slot) => {
+    if (!slot.suit) return;
+    slotsBySuit.set(slot.suit, [...(slotsBySuit.get(slot.suit) ?? []), slot]);
+  });
+
+  let changed = false;
+  slotsBySuit.forEach((suitSlots) => {
+    const assignment = bestSuitAssignment(suitSlots);
+    if (!assignment) return;
+    assignment.chosen.forEach(({ slot, candidate }) => {
+      if (slot.cardId !== candidate.cardId) changed = true;
+      applyCandidate(slot, candidate);
+    });
+  });
+
+  return changed;
 }
 
 function fillClearedSlotsFromAlternatives(slots) {
@@ -1261,7 +1476,9 @@ export function recognizeFantasylandImageData(imageData) {
   const discardSlots = Array.from({ length: 4 }, (_, index) =>
     rects.discard[index] ? recognizeSlot(imageData, rects.discard[index], "discard") : emptySlot(),
   );
-  enforceDeckConstraints([...gridSlots, ...discardSlots]);
+  const allSlots = [...gridSlots, ...discardSlots];
+  resolveDeckConflicts(allSlots);
+  enforceDeckConstraints(allSlots);
   const displayedScore = recognizeDisplayedScore(imageData, rects);
   const cards = [...gridSlots, ...discardSlots].map((slot) => slot.cardId);
   const recognizedCards = cards.filter(Boolean);
@@ -1311,4 +1528,5 @@ export const __recognizerTestHooks = {
   classifyScoreDigit,
   displayedScoreTotalFromDigits,
   displayedScoreRects,
+  resolveDeckConflicts,
 };
