@@ -12,7 +12,7 @@ import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=s
 import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-1";
 import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
-import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-17";
+import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-18";
 
 const selected = new Set();
 const attemptGridCards = Array(16).fill("");
@@ -250,7 +250,12 @@ function renderAttemptEditor() {
 }
 
 function screenshotScoreMismatch(recognized) {
-  if (!recognized?.displayedScore) return null;
+  // The score text is optional OCR, while the card recognizer has a dedicated
+  // per-card confidence model and deck validation. A complete card read must
+  // never be rejected because a decorative payout label was mistaken for a
+  // displayed total (for example, "$8,222"). Only use score OCR as a hint
+  // when the card read itself already needs manual review.
+  if (!recognized?.displayedScore || recognized.complete) return null;
   const score = scorePlacement(recognized.grid, recognized.discard);
   const expected = recognized.displayedScore;
   const mismatches = [];

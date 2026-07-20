@@ -1,4 +1,5 @@
 import { RANK_GLYPH_MASK_SIZE, RANK_GLYPH_TEMPLATES } from "./rankGlyphTemplates.js";
+import { SCORE_GLYPH_MASK_SIZE, SCORE_GLYPH_TEMPLATES } from "./scoreGlyphTemplates.js";
 
 const SUIT_REFERENCES = {
   H: [245, 151, 157],
@@ -1109,6 +1110,43 @@ function brightPixelMask(imageData, rect) {
   return points;
 }
 
+function medianChannel(values) {
+  return median(values.map(Number));
+}
+
+function scoreForegroundMask(imageData, rect) {
+  const borderSamples = [];
+  const inset = Math.max(1, Math.min(6, Math.floor(Math.min(rectWidth(rect), rectHeight(rect)) * 0.08)));
+  const xPositions = [rect.left + inset, (rect.left + rect.right) / 2, rect.right - inset - 1].map(Math.round);
+  const yPositions = [rect.top + inset, rect.top + rectHeight(rect) * 0.22, rect.bottom - inset - 1].map(Math.round);
+
+  xPositions.forEach((x) => {
+    borderSamples.push(pixelAt(imageData, x, yPositions[0]));
+    borderSamples.push(pixelAt(imageData, x, yPositions[2]));
+  });
+  yPositions.forEach((y) => {
+    borderSamples.push(pixelAt(imageData, xPositions[0], y));
+    borderSamples.push(pixelAt(imageData, xPositions[2], y));
+  });
+
+  const background = [0, 1, 2].map((channel) => medianChannel(borderSamples.map((color) => color[channel])));
+  const points = [];
+
+  for (let y = rect.top; y < rect.bottom; y += 1) {
+    for (let x = rect.left; x < rect.right; x += 1) {
+      const color = pixelAt(imageData, x, y);
+      const contrast = colorDistance(color, background);
+      // Score text is neutral black/white. Excluding saturated pixels keeps the
+      // nearby yellow brackets and colorful card borders out of the OCR mask.
+      if (contrast > 900 && Math.max(...color) - Math.min(...color) < 32) {
+        points.push([x - rect.left, y - rect.top]);
+      }
+    }
+  }
+
+  return points;
+}
+
 function componentBounds(points, width, height) {
   return connectedComponents(points, width, height)
     .map((component) => {
@@ -1222,6 +1260,52 @@ function scoreDigitFeatures(box) {
   };
 }
 
+function normalizedScoreGlyphMask(box) {
+  const sourceWidth = box.right - box.left;
+  const sourceHeight = box.bottom - box.top;
+  const points = box.points ?? [];
+  if (!sourceWidth || !sourceHeight || !points.length) return null;
+
+  const filled = new Set(points.map(([x, y]) => `${x},${y}`));
+  const width = SCORE_GLYPH_MASK_SIZE.width;
+  const height = SCORE_GLYPH_MASK_SIZE.height;
+  const normalized = new Uint8Array(width * height);
+
+  for (let y = 0; y < height; y += 1) {
+    const yStart = Math.floor((y * sourceHeight) / height);
+    const yEnd = Math.max(yStart + 1, Math.ceil(((y + 1) * sourceHeight) / height));
+    for (let x = 0; x < width; x += 1) {
+      const xStart = Math.floor((x * sourceWidth) / width);
+      const xEnd = Math.max(xStart + 1, Math.ceil(((x + 1) * sourceWidth) / width));
+      let hit = false;
+      for (let sourceY = yStart; sourceY < yEnd && !hit; sourceY += 1) {
+        for (let sourceX = xStart; sourceX < xEnd; sourceX += 1) {
+          if (filled.has(`${sourceX},${sourceY}`)) {
+            hit = true;
+            break;
+          }
+        }
+      }
+      normalized[y * width + x] = hit ? 1 : 0;
+    }
+  }
+
+  return normalized;
+}
+
+function classifyScoreGlyph(box) {
+  const mask = normalizedScoreGlyphMask(box);
+  if (mask) {
+    const candidates = Object.entries(SCORE_GLYPH_TEMPLATES)
+      .flatMap(([digit, templates]) =>
+        templates.map((template) => ({ digit, confidence: rankTemplateScore(mask, template) })),
+      )
+      .sort((a, b) => b.confidence - a.confidence);
+    if (candidates[0]?.confidence >= 0.58) return candidates[0].digit;
+  }
+  return classifyScoreDigit(scoreDigitFeatures(box));
+}
+
 function classifyScoreDigit(features) {
   const {
     width,
@@ -1313,21 +1397,22 @@ function groupTextBoxesByRow(boxes) {
 }
 
 function readScoreTotalFromBoxes(boxes) {
-  const digitBoxes = boxes
-    .filter((box) => box.bottom - box.top >= 8 && box.right - box.left >= 3)
-    .map((box) => ({
-      ...box,
-      digit: classifyScoreDigit(scoreDigitFeatures(box)),
-    }))
-    .filter((entry) => entry.digit);
+  const tallest = Math.max(0, ...boxes.map((box) => box.bottom - box.top));
+  const digitBoxes = boxes.filter(
+    (box) =>
+      box.bottom - box.top >= Math.max(8, tallest * 0.55) &&
+      box.right - box.left >= 3,
+  );
   const rows = groupTextBoxesByRow(digitBoxes);
   const candidates = rows
     .map((row) => {
-      const rowDigits = row.boxes
+      const glyphs = row.boxes
         .sort((a, b) => a.left - b.left)
-        .map((box) => box.digit)
-        .filter(Boolean)
-        .join("");
+        // The first tall glyph is the dollar sign. The decimal/comma separator
+        // is filtered above because it is much shorter than the digits.
+        .slice(1)
+        .map(classifyScoreGlyph);
+      const rowDigits = glyphs.every(Boolean) ? glyphs.join("") : "";
       return {
         centerY: row.centerY,
         value: displayedScoreTotalFromDigits(rowDigits),
@@ -1404,7 +1489,7 @@ function recognizeDisplayedScore(imageData, rects) {
   );
   const handDigits = readSimpleDigitsFromBounds(handBounds);
   const totalBoxes = textComponentBoxes(
-    brightPixelMask(imageData, totalRect),
+    scoreForegroundMask(imageData, totalRect),
     totalRect.right - totalRect.left,
     totalRect.bottom - totalRect.top,
   );
