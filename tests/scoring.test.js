@@ -9,7 +9,7 @@ import {
   uniqueSolutionsByPlacement,
   uniqueSolutionsByStructure,
 } from "../src/layoutEquivalence.js";
-import { compareScores, scoreHand, scorePlacement, theoreticalMaxTotalForHandCount } from "../src/scoring.js";
+import { compareScores, isPayoutFeasibleTotal, scoreHand, scorePlacement, theoreticalMaxTotalForHandCount } from "../src/scoring.js";
 import { BOARD_TRANSFORMS, canonicalPlacementKey } from "../src/symmetry.js";
 
 function assertHand(cards, key, base, quality) {
@@ -89,6 +89,8 @@ assert.equal(screenshotScore.base, 2480);
 assert.equal(screenshotScore.handCount, 10);
 assert.equal(screenshotScore.multiplier, 6);
 assert.equal(screenshotScore.total, 14880);
+assert.equal(isPayoutFeasibleTotal(14880), true);
+assert.equal(isPayoutFeasibleTotal(8222), false);
 assert.equal(BOARD_TRANSFORMS.length, 32);
 
 const interiorRowSwapGrid = [...screenshotGrid];

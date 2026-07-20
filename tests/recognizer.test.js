@@ -220,6 +220,7 @@ for (const [digit, shape] of Object.entries(scoreDigitShapes)) {
 
 assert.equal(displayedScoreTotalFromDigits("14880"), 14880);
 assert.equal(displayedScoreTotalFromDigits("8790"), 8790);
+assert.equal(displayedScoreTotalFromDigits("8222"), null);
 assert.equal(displayedScoreTotalFromDigits("822272222"), null);
 assert.equal(displayedScoreTotalFromDigits("10"), null);
 assert.equal(displayedScoreTotalFromDigits("99999"), null);

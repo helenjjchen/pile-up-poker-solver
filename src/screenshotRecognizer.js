@@ -1,5 +1,6 @@
 import { RANK_GLYPH_MASK_SIZE, RANK_GLYPH_TEMPLATES } from "./rankGlyphTemplates.js";
 import { SCORE_GLYPH_MASK_SIZE, SCORE_GLYPH_TEMPLATES } from "./scoreGlyphTemplates.js";
+import { isPayoutFeasibleTotal } from "./scoring.js";
 
 const SUIT_REFERENCES = {
   H: [245, 151, 157],
@@ -1368,7 +1369,7 @@ function classifyScoreDigit(features) {
 function displayedScoreTotalFromDigits(digits) {
   if (!/^\d{3,5}$/.test(digits)) return null;
   const value = Number(digits);
-  if (!Number.isFinite(value) || value > MAX_DISPLAYED_SCORE_TOTAL) return null;
+  if (!Number.isFinite(value) || value > MAX_DISPLAYED_SCORE_TOTAL || !isPayoutFeasibleTotal(value)) return null;
   return value;
 }
 
