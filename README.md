@@ -91,11 +91,11 @@ For maximization, the saved "best known" score is a lower bound on the true opti
 
 Browser-local cache keys:
 
-- `pile-up-poker.best-known-fantasyland.v2`: best-known grid/discard placements and scores by canonical deal key.
+- `pile-up-poker.best-known-fantasyland.v3`: best-known scores plus one saved placement for every distinct tied scoring profile found, grouped by canonical deal key. The app also reads and migrates the legacy v1/v2 singleton records.
 - `pile-up-poker.exact-progress.v2`: resumable native proof progress by canonical deal key.
 
 Repo-backed local data:
 
-- `data/local-best-known-fantasyland.json`: best-known placements saved by the local Node server at `/api/local-best-known`.
+- `data/local-best-known-fantasyland.json`: best-known placements and tied scoring-profile representatives saved by the local Node server at `/api/local-best-known`.
 
 These caches are origin-specific. `http://127.0.0.1:5173/` and `file:///.../index.html` do not share browser local storage, and only the `http://127.0.0.1:5173/` Node server path can use the native exact solver API or write to `data/local-best-known-fantasyland.json`.

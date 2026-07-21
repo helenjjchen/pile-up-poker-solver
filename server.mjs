@@ -4,12 +4,20 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { promisify } from "node:util";
 import http from "node:http";
+import {
+  BEST_KNOWN_CACHE_VERSION,
+  bestKnownVariantCount,
+  mergeBestKnownRecord,
+  normalizeBestKnownRecord,
+  serializeBestKnownRecord,
+} from "./src/bestKnownCache.js";
 
 const execFileAsync = promisify(execFile);
 const ROOT = process.cwd();
 const PORT = Number(process.env.PORT ?? 5173);
 const SOLVER = join(ROOT, "tools", "bin", "exact_fantasyland_10");
 const LOCAL_BEST_KNOWN = join(ROOT, "data", "local-best-known-fantasyland.json");
+let localBestKnownMutationQueue = Promise.resolve();
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -33,7 +41,7 @@ function readBody(request) {
     request.setEncoding("utf8");
     request.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 20000) {
+      if (body.length > 1000000) {
         request.destroy();
         rejectBody(new Error("Request body too large."));
       }
@@ -81,13 +89,20 @@ function validateBestKnownRecord(record) {
     return "Record is missing a canonical deal key.";
   }
   if (!isValidCardArray(record.deal, 20)) return "Record deal must contain 20 unique card ids.";
-  if (!isValidCardArray(record.grid, 16)) return "Record grid must contain 16 unique card ids.";
-  if (!isValidCardArray(record.discard, 4)) return "Record discard must contain 4 unique card ids.";
-  const placementCards = new Set([...record.grid, ...record.discard]);
-  if (placementCards.size !== 20 || record.deal.some((card) => !placementCards.has(card))) {
-    return "Record grid and discard must contain exactly the deal cards.";
+  if (record.variants !== undefined && !Array.isArray(record.variants)) {
+    return "Record variants must be an array.";
+  }
+  const placements = [record, ...(record.variants ?? [])];
+  for (const placement of placements) {
+    if (!isValidCardArray(placement.grid, 16)) return "Record grid must contain 16 unique card ids.";
+    if (!isValidCardArray(placement.discard, 4)) return "Record discard must contain 4 unique card ids.";
+    const placementCards = new Set([...placement.grid, ...placement.discard]);
+    if (placementCards.size !== 20 || record.deal.some((card) => !placementCards.has(card))) {
+      return "Every record variant must contain exactly the deal cards.";
+    }
   }
   if (!record.score || !Number.isFinite(Number(record.score.total))) return "Record score is missing a total.";
+  if (!normalizeBestKnownRecord(record, "local-file")) return "Record does not contain a valid placement.";
   return null;
 }
 
@@ -95,7 +110,7 @@ async function readLocalBestKnownData() {
   try {
     return JSON.parse(await readFile(LOCAL_BEST_KNOWN, "utf8"));
   } catch {
-    return { version: 1, records: [] };
+    return { version: BEST_KNOWN_CACHE_VERSION, records: [] };
   }
 }
 
@@ -105,7 +120,41 @@ async function writeLocalBestKnownData(data) {
 }
 
 async function handleLocalBestKnownGet(_request, response) {
+  await localBestKnownMutationQueue;
   sendJson(response, 200, await readLocalBestKnownData());
+}
+
+async function saveLocalBestKnownRecord(record) {
+  const normalizedIncoming = normalizeBestKnownRecord(record, "local-file");
+  const data = await readLocalBestKnownData();
+  const records = Array.isArray(data.records) ? data.records : [];
+  const canonicalKey = normalizedIncoming.canonicalDealKey;
+  const existingIndex = records.findIndex((item) => item.canonicalDealKey === canonicalKey);
+  const existingRecord = existingIndex === -1 ? null : normalizeBestKnownRecord(records[existingIndex], "local-file");
+  const mergedRecord = mergeBestKnownRecord(existingRecord, normalizedIncoming);
+  const savedRecord = serializeBestKnownRecord(mergedRecord);
+  const changed =
+    !existingRecord ||
+    compareRecordScores(savedRecord, serializeBestKnownRecord(existingRecord)) > 0 ||
+    bestKnownVariantCount(mergedRecord) > bestKnownVariantCount(existingRecord);
+
+  if (existingIndex === -1) {
+    records.push(savedRecord);
+  } else if (changed) {
+    records[existingIndex] = savedRecord;
+  }
+
+  const nextData = {
+    version: Math.max(Number(data.version ?? 1), BEST_KNOWN_CACHE_VERSION),
+    updatedAt: changed ? new Date().toISOString() : data.updatedAt,
+    records: records.sort((a, b) => a.canonicalDealKey.localeCompare(b.canonicalDealKey)),
+  };
+  if (changed) await writeLocalBestKnownData(nextData);
+
+  return {
+    saved: changed,
+    record: changed ? savedRecord : serializeBestKnownRecord(existingRecord),
+  };
 }
 
 async function handleLocalBestKnownPost(request, response) {
@@ -124,35 +173,16 @@ async function handleLocalBestKnownPost(request, response) {
     return;
   }
 
-  const data = await readLocalBestKnownData();
-  const records = Array.isArray(data.records) ? data.records : [];
-  const existingIndex = records.findIndex((item) => item.canonicalDealKey === record.canonicalDealKey);
-  const savedRecord = {
-    ...record,
-    source: record.source ?? "local-file",
-    foundAt: record.foundAt ?? new Date().toISOString(),
-  };
-  let changed = false;
-
-  if (existingIndex === -1) {
-    records.push(savedRecord);
-    changed = true;
-  } else if (compareRecordScores(savedRecord, records[existingIndex]) > 0) {
-    records[existingIndex] = savedRecord;
-    changed = true;
+  const mutation = localBestKnownMutationQueue.then(() => saveLocalBestKnownRecord(record));
+  localBestKnownMutationQueue = mutation.then(
+    () => undefined,
+    () => undefined,
+  );
+  try {
+    sendJson(response, 200, await mutation);
+  } catch {
+    sendJson(response, 500, { error: "Could not save the best-known record." });
   }
-
-  const nextData = {
-    version: data.version ?? 1,
-    updatedAt: changed ? new Date().toISOString() : data.updatedAt,
-    records: records.sort((a, b) => a.canonicalDealKey.localeCompare(b.canonicalDealKey)),
-  };
-  if (changed) await writeLocalBestKnownData(nextData);
-
-  sendJson(response, 200, {
-    saved: changed,
-    record: existingIndex === -1 ? savedRecord : nextData.records.find((item) => item.canonicalDealKey === record.canonicalDealKey),
-  });
 }
 
 async function handleExactHighChunk(request, response) {

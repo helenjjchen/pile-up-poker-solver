@@ -6,13 +6,30 @@ import {
   canonicalDealKey,
   cardLabel,
   sortCardIds,
-  translatePlacementToDeal,
 } from "./cards.js";
+import {
+  BEST_KNOWN_CACHE_VERSION,
+  adaptBestKnownRecordToDeal,
+  bestKnownSolutions,
+  bestKnownVariantCount,
+  createBestKnownRecord,
+  mergeBestKnownRecord,
+  mergeBestKnownRecordList,
+  normalizeBestKnownRecord,
+  serializeBestKnownRecord,
+} from "./bestKnownCache.js?v=best-known-cache-1";
 import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=solver-equivalence-3";
 import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-1";
 import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
 import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-19";
+import {
+  formatScoringWayCount,
+  formatWayCount,
+  scoringHandSummary,
+  solutionHandProfileKey,
+  solutionOutcomeKey,
+} from "./solutionProfiles.js?v=solution-profiles-1";
 
 const selected = new Set();
 const attemptGridCards = Array(16).fill("");
@@ -72,7 +89,8 @@ const discardAnnotation = document.querySelector("#discardAnnotation");
 const solutionsRow = document.querySelector("#solutionsRow");
 const bucketList = document.querySelector("#bucketList");
 const runtimeInfo = document.querySelector("#runtimeInfo");
-const BEST_KNOWN_STORAGE_KEY = "pile-up-poker.best-known-fantasyland.v2";
+const BEST_KNOWN_STORAGE_KEY = "pile-up-poker.best-known-fantasyland.v3";
+const PREVIOUS_BEST_KNOWN_STORAGE_KEY = "pile-up-poker.best-known-fantasyland.v2";
 const LEGACY_BEST_KNOWN_STORAGE_KEY = "pile-up-poker.best-known-fantasyland.v1";
 const EXACT_PROGRESS_STORAGE_KEY = "pile-up-poker.exact-progress.v2";
 
@@ -523,53 +541,11 @@ function saveExactProgressForCurrentDeal(patch) {
   return next;
 }
 
-function normalizeBestKnownRecord(record, sourceFallback = "saved") {
-  if (!record?.grid || !record?.discard || record.grid.length !== 16 || record.discard.length !== 4) return null;
-  const deal = record.deal ? sortCardIds(record.deal) : sortCardIds([...record.grid, ...record.discard]);
-  const canonicalKey = record.canonicalDealKey ?? canonicalDealKey(deal);
-  const score = scorePlacement(record.grid, record.discard);
-  return {
-    id: record.id ?? `${canonicalKey}-${score.total}`,
-    dealKey: record.dealKey ?? dealKey(deal),
-    canonicalDealKey: canonicalKey,
-    deal,
-    grid: [...record.grid],
-    discard: [...record.discard],
-    score,
-    source: record.source ?? sourceFallback,
-    foundAt: record.foundAt ?? new Date().toISOString(),
-    notes: record.notes ?? "",
-  };
-}
-
 function rememberBestKnownRecord(records, record) {
   if (!record) return;
   const key = record.canonicalDealKey;
   const existing = records.get(key);
-  if (!existing || compareScores(record.score, existing.score) > 0) {
-    records.set(key, record);
-  }
-}
-
-function serializeBestKnownRecord(record) {
-  return {
-    id: record.id,
-    dealKey: record.dealKey,
-    canonicalDealKey: record.canonicalDealKey,
-    deal: record.deal,
-    grid: record.grid,
-    discard: record.discard,
-    score: {
-      total: record.score.total,
-      beforeMultiplier: record.score.base,
-      hands: record.score.handCount,
-      multiplier: record.score.multiplier,
-      qualityHands: record.score.qualityHandCount,
-    },
-    source: record.source,
-    foundAt: record.foundAt,
-    notes: record.notes,
-  };
+  records.set(key, mergeBestKnownRecord(existing, record));
 }
 
 function readLocalBestKnown() {
@@ -579,7 +555,8 @@ function readLocalBestKnown() {
       const raw = window.localStorage.getItem(storageKey);
       if (!raw) return;
       const parsed = JSON.parse(raw);
-      Object.values(parsed).forEach((record) => {
+      const storedRecords = parsed?.records && typeof parsed.records === "object" ? parsed.records : parsed;
+      Object.values(storedRecords).forEach((record) => {
         rememberBestKnownRecord(records, normalizeBestKnownRecord(record, "browser-local"));
       });
     } catch {
@@ -588,15 +565,21 @@ function readLocalBestKnown() {
   };
 
   readStorageValue(LEGACY_BEST_KNOWN_STORAGE_KEY);
+  readStorageValue(PREVIOUS_BEST_KNOWN_STORAGE_KEY);
   readStorageValue(BEST_KNOWN_STORAGE_KEY);
   return records;
 }
 
 function writeLocalBestKnown() {
   const serializable = Object.fromEntries(
-    [...localBestKnown.entries()].map(([key, record]) => [key, serializeBestKnownRecord(record)]),
+    [...localBestKnown.entries()]
+      .map(([key, record]) => [key, serializeBestKnownRecord(record)])
+      .filter(([, record]) => Boolean(record)),
   );
-  window.localStorage.setItem(BEST_KNOWN_STORAGE_KEY, JSON.stringify(serializable));
+  window.localStorage.setItem(
+    BEST_KNOWN_STORAGE_KEY,
+    JSON.stringify({ version: BEST_KNOWN_CACHE_VERSION, records: serializable }),
+  );
 }
 
 async function loadBestKnownFile(path, sourceFallback) {
@@ -635,7 +618,7 @@ async function persistBestKnownRecordToServer(record) {
 function syncBrowserLocalBestKnownToServer() {
   for (const record of localBestKnown.values()) {
     const sharedRecord = sharedBestKnown.get(record.canonicalDealKey);
-    if (!sharedRecord || compareScores(record.score, sharedRecord.score) > 0) {
+    if (!sharedRecord || compareScores(record.score, sharedRecord.score) >= 0) {
       persistBestKnownRecordToServer(record);
     }
   }
@@ -667,38 +650,12 @@ async function loadExactProofStatuses() {
   }
 }
 
-function adaptBestKnownRecordToCurrentDeal(record) {
-  if (!record || selected.size !== 20) return null;
-  const currentDeal = selectedCards();
-  const currentRawKey = dealKey(currentDeal);
-  if (record.dealKey === currentRawKey) return record;
-  if (record.canonicalDealKey !== canonicalDealKey(currentDeal)) return null;
-
-  const translated = translatePlacementToDeal(record.grid, record.discard, currentDeal);
-  if (!translated) return null;
-
-  return normalizeBestKnownRecord(
-    {
-      ...record,
-      id: `${record.id}-canonical-${currentRawKey}`,
-      dealKey: currentRawKey,
-      deal: currentDeal,
-      grid: translated.grid,
-      discard: translated.discard,
-      source: `${record.source} canonical`,
-      notes: `${record.notes} Translated from canonical-equivalent deal ${record.dealKey}.`,
-    },
-    record.source,
-  );
-}
-
 function bestKnownForCurrentDeal() {
   if (selected.size !== 20) return null;
-  const candidates = [...localBestKnown.values(), ...sharedBestKnown.values(), ...seededBestKnown.values()]
-    .map(adaptBestKnownRecordToCurrentDeal)
-    .filter(Boolean)
-    .sort((a, b) => compareScores(b.score, a.score));
-  return candidates[0] ?? null;
+  return mergeBestKnownRecordList(
+    [...localBestKnown.values(), ...sharedBestKnown.values(), ...seededBestKnown.values()],
+    selectedCards(),
+  );
 }
 
 function exactProofForCurrentDeal() {
@@ -799,58 +756,59 @@ function exactProofForCurrentDeal() {
   };
 }
 
-function saveBestKnownSolution(solution, source = "browser-local") {
-  if (!solution || selected.size !== 20) return false;
-  const rawKey = dealKey([...selected]);
+function saveBestKnownSolutions(solutions, source = "browser-local") {
+  const unchanged = { changed: false, scoreImproved: false, variantsAdded: false };
+  if (!Array.isArray(solutions) || !solutions.length || selected.size !== 20) return unchanged;
+  const currentDeal = selectedCards();
   const canonicalKey = canonicalDealKey(selectedCards());
-  const record = normalizeBestKnownRecord(
-    {
-      id: `${canonicalKey}-${solution.score.total}`,
-      dealKey: rawKey,
-      canonicalDealKey: canonicalKey,
-      deal: selectedCards(),
-      grid: solution.grid,
-      discard: solution.discard,
-      source,
-      foundAt: new Date().toISOString(),
-      notes: "Best known placement found in this browser session. Not certified optimal.",
-    },
+  const record = createBestKnownRecord({
+    deal: currentDeal,
+    solutions,
     source,
-  );
-  if (!record) return false;
+    notes: "Best known scoring-way representatives found in this browser session. Not certified optimal.",
+  });
+  if (!record) return unchanged;
 
-  const existingLocal = localBestKnown.get(canonicalKey);
   const existingBest = bestKnownForCurrentDeal();
+  const comparison = existingBest ? compareScores(record.score, existingBest.score) : 1;
+  if (comparison < 0) return unchanged;
+
+  const mergedRecord = comparison === 0 ? mergeBestKnownRecord(existingBest, record) : record;
+  const previousVariantCount = comparison === 0 ? bestKnownVariantCount(existingBest) : 0;
+  const nextVariantCount = bestKnownVariantCount(mergedRecord);
+  const scoreImproved = !existingBest || comparison > 0;
+  const variantsAdded = comparison === 0 && nextVariantCount > previousVariantCount;
+  if (!scoreImproved && !variantsAdded) return unchanged;
+
+  const localRecord = adaptBestKnownRecordToDeal(mergedRecord, currentDeal) ?? mergedRecord;
+  localBestKnown.set(canonicalKey, localRecord);
+  writeLocalBestKnown();
+
   const existingShared = sharedBestKnown.get(canonicalKey);
-  const shouldPersistToFile = !existingShared || compareScores(record.score, existingShared.score) > 0;
+  const sharedForCurrentDeal = existingShared
+    ? adaptBestKnownRecordToDeal(existingShared, currentDeal)
+    : null;
+  const shouldPersistToFile =
+    !sharedForCurrentDeal ||
+    compareScores(localRecord.score, sharedForCurrentDeal.score) > 0 ||
+    (compareScores(localRecord.score, sharedForCurrentDeal.score) === 0 &&
+      bestKnownVariantCount(localRecord) > bestKnownVariantCount(sharedForCurrentDeal));
+  if (shouldPersistToFile) persistBestKnownRecordToServer(localRecord);
 
-  if (existingBest && compareScores(record.score, existingBest.score) <= 0) {
-    if (compareScores(record.score, existingBest.score) === 0 && shouldPersistToFile) {
-      persistBestKnownRecordToServer(record);
-    }
-    return false;
-  }
+  return { changed: true, scoreImproved, variantsAdded };
+}
 
-  if (!existingLocal || compareScores(record.score, existingLocal.score) > 0) {
-    localBestKnown.set(canonicalKey, record);
-    writeLocalBestKnown();
-    if (shouldPersistToFile) persistBestKnownRecordToServer(record);
-    return true;
-  }
-  return false;
+function saveBestKnownSolution(solution, source = "browser-local") {
+  return saveBestKnownSolutions(solution ? [solution] : [], source);
 }
 
 function resultFromBestKnown(record, options = {}) {
-  const solution = {
-    grid: record.grid,
-    discard: record.discard,
-    score: record.score,
-    source: record.source,
-    key: `best-known-${record.dealKey}`,
-  };
+  const solutions = bestKnownSolutions(record);
+  const solution = solutions[0];
+  if (!solution) return null;
   return {
     best: solution,
-    solutions: [solution],
+    solutions,
     bestByHandCount: Array.from({ length: 11 }, (_, index) => {
       const handCount = 10 - index;
       return handCount === record.score.handCount
@@ -879,22 +837,19 @@ function resultFromBestKnown(record, options = {}) {
     searchOrder: "saved best-known placement",
     isBestKnownView: true,
     exact: Boolean(options.exact),
+    exhaustiveWayOutcomeKeys: [],
   };
 }
 
 function mergeBestKnownIntoResult(result, record) {
   if (!result?.best || !record) return result;
 
-  const savedSolution = {
-    grid: record.grid,
-    discard: record.discard,
-    score: record.score,
-    source: record.source,
-    key: `best-known-${record.dealKey}`,
-  };
+  const savedSolutions = bestKnownSolutions(record);
+  const savedSolution = savedSolutions[0];
+  if (!savedSolution) return result;
   const existingSolutions = result.solutions ?? [];
   const mergedSolutions = uniqueSolutionsByPlacement(
-    [savedSolution, ...existingSolutions].sort((a, b) => compareScores(b.score, a.score)),
+    [...savedSolutions, ...existingSolutions].sort((a, b) => compareScores(b.score, a.score)),
   );
 
   const bestByHandCount = result.bestByHandCount.map((bucket) => {
@@ -914,7 +869,7 @@ function mergeBestKnownIntoResult(result, record) {
   return {
     ...result,
     best: mergedSolutions[0],
-    solutions: mergedSolutions.slice(0, 24),
+    solutions: mergedSolutions,
     bestByHandCount,
     usedSavedLowerBound: compareScores(savedSolution.score, result.best.score) > 0,
   };
@@ -959,7 +914,7 @@ function mergeAttemptIntoResult(result, attemptSolution) {
   return {
     ...result,
     best: mergedSolutions[0],
-    solutions: mergedSolutions.slice(0, 24),
+    solutions: mergedSolutions,
     bestByHandCount,
     incumbentTotal: Math.max(result.incumbentTotal ?? 0, attemptSolution.score.total),
     usedAttemptLowerBound: compareScores(attemptSolution.score, result.best.score) > 0,
@@ -995,7 +950,7 @@ function mergeSolverResults(primary, exactHigh) {
   return {
     ...primary,
     best: mergedSolutions[0] ?? primary.best,
-    solutions: mergedSolutions.slice(0, 24),
+    solutions: mergedSolutions,
     bestByHandCount: [...bucketByHandCount.values()].sort((a, b) => b.handCount - a.handCount),
     attempts: (primary.attempts ?? 0) + (exactHigh.attempts ?? 0),
     elapsedMs: (primary.elapsedMs ?? 0) + (exactHigh.elapsedMs ?? 0),
@@ -1755,22 +1710,21 @@ function renderMiniCardContent(cardId) {
   const card = CARD_BY_ID[cardId];
   const suit = SUIT_META[card.suit];
   return `
-    <span class="card-rank ${suit.colorClass}">${card.rank}</span>
-    <span class="card-suit ${suit.colorClass}">${suit.label}</span>
+    <span class="card-corner-rank">${card.rank}</span>
+    <span class="card-corner-suit" aria-hidden="true">${suit.label}</span>
+    <span class="card-center-rank" aria-hidden="true">${card.rank}</span>
   `;
 }
 
 function renderPlayingCard(cardId) {
-  if (!cardId) return '<div class="playing-card empty"></div>';
+  if (!cardId) return '<div class="playing-card empty" aria-hidden="true"></div>';
   const card = CARD_BY_ID[cardId];
   const suit = SUIT_META[card.suit];
   return `
-    <div class="playing-card">
-      <div class="corner ${suit.colorClass}">
-        <span>${card.rank}</span>
-        <span>${suit.label}</span>
-      </div>
-      <span class="big-rank ${suit.colorClass}">${card.rank}</span>
+    <div class="playing-card ${suit.colorClass}" role="img" aria-label="${card.rank} of ${suit.name}">
+      <span class="card-corner-rank">${card.rank}</span>
+      <span class="card-corner-suit" aria-hidden="true">${suit.label}</span>
+      <span class="card-center-rank" aria-hidden="true">${card.rank}</span>
     </div>
   `;
 }
@@ -1840,6 +1794,7 @@ function renderBoardAnnotations(score) {
   const columns = score.lines.filter((line) => line.type === "column");
   const corner = score.lines.find((line) => line.type === "corner");
 
+  boardGrid.classList.toggle("has-corner-hand", Boolean(corner?.scores));
   rowAnnotations.innerHTML = rows.map((line) => renderLineAnnotation(line, "row-line")).join("");
   columnAnnotations.innerHTML = columns.map((line) => renderLineAnnotation(line, "column-line")).join("");
   applyLineAnnotation(cornerAnnotation, corner, "corner-line");
@@ -1847,6 +1802,7 @@ function renderBoardAnnotations(score) {
 }
 
 function renderEmptyBoardAnnotations() {
+  boardGrid.classList.remove("has-corner-hand");
   rowAnnotations.innerHTML = Array.from({ length: 4 }, () => renderLineAnnotation(null, "row-line")).join("");
   columnAnnotations.innerHTML = Array.from({ length: 4 }, () => renderLineAnnotation(null, "column-line")).join("");
   cornerAnnotation.className = "line-annotation corner-line is-empty";
@@ -1858,10 +1814,12 @@ function renderEmptyBoardAnnotations() {
 function renderDeck() {
   deckGrid.innerHTML = "";
   for (const card of DECK) {
+    const suit = SUIT_META[card.suit];
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "card-button";
+    button.className = `card-button ${suit.colorClass}`;
     button.dataset.cardId = card.id;
+    button.setAttribute("aria-label", `${card.rank} of ${suit.name}`);
     button.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
     button.innerHTML = renderMiniCardContent(card.id);
     if (selected.has(card.id)) button.classList.add("is-selected");
@@ -1994,50 +1952,6 @@ function activeSolution() {
   return latestResult?.solutions?.[activeSolutionIndex] ?? latestResult?.best ?? null;
 }
 
-function solutionOutcomeKey(solution) {
-  const score = solution.score;
-  return [score.total, score.handCount, score.qualityHandCount].join("|");
-}
-
-const SCORING_HAND_ORDER = [
-  ["straight-flush", "straight flush", "straight flushes"],
-  ["four-kind", "quad", "quads"],
-  ["straight", "straight", "straights"],
-  ["three-kind", "trip", "trips"],
-  ["flush", "flush", "flushes"],
-  ["two-pair", "two pair", "two pairs"],
-  ["pair", "pair", "pairs"],
-];
-
-function scoringHandCounts(solution) {
-  const counts = new Map();
-  const addHand = (hand) => {
-    if (!hand || hand.base <= 0) return;
-    counts.set(hand.key, (counts.get(hand.key) ?? 0) + 1);
-  };
-
-  solution.score.lines.forEach((line) => {
-    if (line.scores) addHand(line.hand);
-  });
-  if (solution.score.discardScores) addHand(solution.score.discardHand);
-
-  return counts;
-}
-
-function solutionHandProfileKey(solution) {
-  const counts = scoringHandCounts(solution);
-  return SCORING_HAND_ORDER.map(([key]) => counts.get(key) ?? 0).join("|");
-}
-
-function scoringHandSummary(solution) {
-  const counts = scoringHandCounts(solution);
-  return SCORING_HAND_ORDER.flatMap(([key, singular, plural]) => {
-    const count = counts.get(key) ?? 0;
-    if (!count) return [];
-    return `${count} ${count === 1 ? singular : plural}`;
-  }).join(" · ");
-}
-
 function groupedSolutions() {
   const groups = [];
   const byKey = new Map();
@@ -2089,6 +2003,7 @@ function renderSolutionGroups() {
     const activeInGroup = group.indexes.includes(activeSolutionIndex);
     const activeVariant = group.variants.find((variant) => variant.indexes.includes(activeSolutionIndex));
     const wayCount = group.variants.length;
+    const wayCountIsExhaustive = (latestResult?.exhaustiveWayOutcomeKeys ?? []).includes(group.key);
     const groupElement = document.createElement("div");
     groupElement.className = `solution-group${activeInGroup ? " is-active" : ""}`;
 
@@ -2099,7 +2014,7 @@ function renderSolutionGroups() {
       wayCount === 1
         ? "Show this scoring way"
         : "Show the first scoring way for this tied outcome.";
-    button.innerHTML = `${money(group.representative.score.total)}<span>${group.representative.score.handCount} hands · ${group.representative.score.qualityHandCount} quality · ${wayCount} ${wayCount === 1 ? "way" : "ways"}</span>`;
+    button.innerHTML = `${money(group.representative.score.total)}<span>${group.representative.score.handCount} hands · ${group.representative.score.qualityHandCount} quality · ${formatWayCount(wayCount, wayCountIsExhaustive)}</span>`;
     button.addEventListener("click", () => {
       activeSolutionIndex = activeVariant?.indexes[0] ?? group.indexes[0];
       renderResult();
@@ -2112,7 +2027,7 @@ function renderSolutionGroups() {
       if (activeInGroup) details.open = true;
 
       const summary = document.createElement("summary");
-      summary.textContent = `${wayCount} scoring ways`;
+      summary.textContent = formatScoringWayCount(wayCount, wayCountIsExhaustive);
       summary.title =
         "Different scoring structures with the same total, hand count, and quality count.";
       details.append(summary);
@@ -2181,8 +2096,8 @@ function renderResult() {
       const statusText = hasScore
         ? `${money(bucket.total)} · ${bucket.qualityHandCount} quality${bucket.status === "proven" ? " · proven" : ""}`
         : bucket.status === "bounded"
-          ? `Bounded by global ceiling ${money(bucket.upperBound)}`
-          : `Not found · global ceiling ${money(bucket.upperBound)}`;
+          ? `Bounded by max possible ${money(bucket.upperBound)}`
+          : `Not found in this search · max possible ${money(bucket.upperBound)}`;
       return `
         <div class="bucket-item${hasScore ? " has-score" : ""}">
           <strong>${bucket.handCount} hand${bucket.handCount === 1 ? "" : "s"}</strong>
@@ -2316,7 +2231,7 @@ async function optimize() {
       }
     }
     activeSolutionIndex = 0;
-    const improvedBestKnown = saveBestKnownSolution(latestResult.best);
+    const savedBestKnown = saveBestKnownSolutions(latestResult.solutions ?? [latestResult.best]);
     const resultStatus = latestResult.exact
       ? "Certified optimum"
       : latestResult.exhaustedLowRows
@@ -2325,8 +2240,10 @@ async function optimize() {
         ? `3+ row buckets exhausted; scores at ${money(latestResult.lowTwoRowCeiling)} or below still possible`
       : latestResult.exhaustedHighBuckets
         ? "High buckets exhausted, lower buckets still possible"
-        : improvedBestKnown
+        : savedBestKnown.scoreImproved
           ? "New best known saved"
+          : savedBestKnown.variantsAdded
+            ? "New tied scoring way saved"
           : latestResult.nativeLowProgress?.advanced
             ? "Final lower-bucket progress saved"
           : latestResult.nativeThreePlusProgress?.advanced

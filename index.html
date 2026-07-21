@@ -3,17 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pile-Up Poker Solver</title>
-    <link rel="stylesheet" href="./styles.css?v=attempt-upload-16" />
+    <title>Fantasyland Pile-Up Poker Solver</title>
+    <link rel="stylesheet" href="./styles.css?v=design-system-34" />
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Fantasyland V1</p>
+          <p class="eyebrow">Fantasyland</p>
           <h1>Pile-Up Poker Solver</h1>
         </div>
-        <div class="topbar-score" id="topScore">$0</div>
+        <div class="topbar-score" id="topScore" aria-live="polite">$0</div>
       </header>
 
       <section class="workspace">
@@ -60,7 +60,7 @@
                 <div class="attempt-discard-slots" id="attemptDiscardSlots"></div>
               </div>
             </div>
-            <p class="attempt-summary" id="attemptSummary">
+            <p class="attempt-summary" id="attemptSummary" role="status" aria-live="polite">
               Optional baseline: add a player grid here, or upload a screenshot to fill it automatically.
             </p>
             <div class="attempt-actions">
@@ -77,7 +77,7 @@
             </select>
             <button type="button" class="primary-button" id="optimizeButton">Optimize</button>
           </div>
-          <p class="status-line" id="statusLine">Select 20 cards.</p>
+          <p class="status-line" id="statusLine" role="status" aria-live="polite">Select 20 cards.</p>
           <div class="optimizer-timer is-hidden" id="optimizerTimer" aria-live="polite">
             <span class="timer-spinner" aria-hidden="true"></span>
             <strong id="optimizerTimerText">Idle</strong>
@@ -91,7 +91,7 @@
               <strong id="resultTotal">$0</strong>
             </div>
             <div>
-              <span>Before Multiplier</span>
+              <span>Base Score</span>
               <strong id="resultBase">$0</strong>
             </div>
             <div>
@@ -108,9 +108,36 @@
             </div>
           </div>
 
+          <div class="board-area">
+            <div class="discard-stack">
+              <div class="area-label">Discard</div>
+              <div class="discard-cards" id="discardCards"></div>
+              <div class="line-annotation discard-line is-empty" id="discardAnnotation"></div>
+            </div>
+            <div class="board-stage">
+              <div class="line-annotation corner-line is-empty" id="cornerAnnotation"></div>
+              <div class="board-main">
+                <div class="board-grid" id="boardGrid"></div>
+                <div class="row-annotations" id="rowAnnotations"></div>
+                <div class="column-annotations" id="columnAnnotations"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="solutions-row" id="solutionsRow"></div>
+
+          <div class="bucket-panel">
+            <div class="panel-heading">
+              <h2>Best By Hand Count</h2>
+              <span>10 → 0</span>
+            </div>
+            <div class="bucket-list" id="bucketList"></div>
+          </div>
+
           <details class="diagnostics-panel">
             <summary>Solver Diagnostics</summary>
             <div class="diagnostics-content">
+              <div class="runtime-info" id="runtimeInfo">Not run</div>
               <div class="best-known-panel" id="bestKnownPanel">
                 <div>
                   <span>Best Known For This Deal</span>
@@ -138,42 +165,15 @@
             <p>
               It still shows separate ways when the same total, hand count, and quality count come from different hand
               type mixes, such as one placement using trips plus two pair while another uses a pair plus a straight.
-              Best-dollar search is prioritized over collecting every equivalent-looking placement.
+              Those representatives are saved for future runs. Counts say “ways found” because proving the best score
+              does not by itself prove that every tied scoring way has been enumerated.
             </p>
           </details>
-
-          <div class="board-area">
-            <div class="discard-stack">
-              <div class="area-label">Discard</div>
-              <div class="discard-cards" id="discardCards"></div>
-              <div class="line-annotation discard-line is-empty" id="discardAnnotation"></div>
-            </div>
-            <div class="board-stage">
-              <div class="line-annotation corner-line is-empty" id="cornerAnnotation"></div>
-              <div class="board-main">
-                <div class="board-grid" id="boardGrid"></div>
-                <div class="row-annotations" id="rowAnnotations"></div>
-                <div class="column-annotations" id="columnAnnotations"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="runtime-info" id="runtimeInfo">Not run</div>
-
-          <div class="solutions-row" id="solutionsRow"></div>
-
-          <div class="bucket-panel">
-            <div class="panel-heading">
-              <h2>Best By Hand Count</h2>
-              <span>10 → 0</span>
-            </div>
-            <div class="bucket-list" id="bucketList"></div>
-          </div>
 
         </section>
       </section>
     </main>
 
-    <script type="module" src="./src/app.js?v=solver-cache-28"></script>
+    <script type="module" src="./src/app.js?v=solver-cache-33"></script>
   </body>
 </html>
