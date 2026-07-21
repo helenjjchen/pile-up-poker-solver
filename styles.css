@@ -1,23 +1,29 @@
 :root {
   color-scheme: light;
-  --bg: #f3f4f2;
+  --bg: #f4f4f3;
   --surface: #ffffff;
-  --surface-2: #eef0ee;
-  --surface-warm: #fff8df;
+  --surface-2: #f2f2f2;
+  --accent-soft: #fff9e6;
   --navy: #181b29;
-  --navy-soft: #232737;
   --ink: #191b22;
   --muted: #6b7074;
   --line: #d9ddd9;
-  --yellow: #ffbf18;
-  --blue: #58aeea;
-  --green: #86a978;
-  --red: #ff9da2;
-  --orange: #f5b857;
+  --card-hairline: var(--line);
+  --accent: #ffc000;
+  --accent-ink: #996000;
+  --focus-ring: var(--blue-ink);
+  --blue: #5dbafc;
+  --green: #98b389;
+  --red: #ffaaac;
+  --orange: #fac16c;
   --blue-ink: #1477b6;
   --green-ink: #557b4b;
-  --red-ink: #d85e68;
-  --orange-ink: #b96f08;
+  --blue-soft: #f2f9ff;
+  --green-soft: #f7f9f6;
+  --red-soft: #fff8f8;
+  --orange-soft: #fffaf3;
+  --success: var(--green);
+  --success-ink: var(--green-ink);
   --radius-sm: 7px;
   --radius-control: 10px;
   --radius-card: 12px;
@@ -64,7 +70,7 @@ button:focus-visible,
 select:focus-visible,
 summary:focus-visible,
 .attempt-upload:focus-within {
-  outline: 3px solid rgba(255, 191, 24, 0.52);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -188,7 +194,7 @@ h2 {
   position: relative;
   display: grid;
   place-items: center;
-  border: 2px solid var(--card-accent);
+  border: 1px solid var(--card-hairline);
   border-radius: var(--radius-card);
   background: #fff;
   color: var(--card-ink);
@@ -201,10 +207,10 @@ h2 {
 
 .card-button {
   min-height: 62px;
-  border-color: transparent;
   box-shadow: 0 3px 10px rgba(23, 24, 31, 0.055);
   transition:
     border-color 140ms ease,
+    background-color 140ms ease,
     transform 140ms ease,
     box-shadow 140ms ease;
 }
@@ -227,9 +233,9 @@ h2 {
 }
 
 .card-button.is-selected {
-  outline: 3px solid rgba(255, 191, 24, 0.34);
-  outline-offset: 1px;
-  background: var(--surface-warm);
+  border-width: 2px;
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .card-corner-rank,
@@ -261,26 +267,26 @@ h2 {
 
 .suit-hearts {
   --card-accent: var(--red);
-  --card-ink: var(--red-ink);
-  color: var(--red-ink);
+  --card-ink: var(--red);
+  color: var(--red);
 }
 
 .suit-spades {
   --card-accent: var(--blue);
-  --card-ink: var(--blue-ink);
-  color: var(--blue-ink);
+  --card-ink: var(--blue);
+  color: var(--blue);
 }
 
 .suit-clubs {
   --card-accent: var(--green);
-  --card-ink: var(--green-ink);
-  color: var(--green-ink);
+  --card-ink: var(--green);
+  color: var(--green);
 }
 
 .suit-diamonds {
   --card-accent: var(--orange);
-  --card-ink: var(--orange-ink);
-  color: var(--orange-ink);
+  --card-ink: var(--orange);
+  color: var(--orange);
 }
 
 .control-row,
@@ -322,7 +328,7 @@ h2 {
 
 .primary-button {
   grid-column: 1 / -1;
-  border-color: #399be0;
+  border-color: var(--blue);
   background: var(--blue);
   color: var(--navy);
   box-shadow: 0 6px 14px rgba(37, 138, 208, 0.22);
@@ -331,7 +337,7 @@ h2 {
 
 .primary-button:hover:not(:disabled) {
   border-color: var(--blue-ink);
-  background: #67b8ee;
+  background: var(--blue);
 }
 
 .primary-button:active:not(:disabled) {
@@ -377,7 +383,7 @@ h2 {
 .timer-spinner {
   width: 12px;
   height: 12px;
-  border: 2px solid var(--yellow);
+  border: 2px solid var(--accent);
   border-top-color: transparent;
   border-radius: 50%;
 }
@@ -387,8 +393,8 @@ h2 {
 }
 
 .optimizer-timer:not(.is-running) .timer-spinner {
-  border-color: var(--green);
-  background: var(--green);
+  border-color: var(--success);
+  background: var(--success);
 }
 
 .screenshot-panel,
@@ -508,11 +514,6 @@ h2 {
   z-index: 1;
 }
 
-.attempt-upload:focus-within {
-  outline: 3px solid rgba(255, 191, 24, 0.4);
-  outline-offset: 2px;
-}
-
 .attempt-preview {
   width: 100%;
   max-height: 240px;
@@ -575,22 +576,22 @@ h2 {
 
 .attempt-slot select.suit-hearts {
   border-color: var(--red);
-  background: rgba(255, 157, 162, 0.08);
+  background: var(--red-soft);
 }
 
 .attempt-slot select.suit-spades {
   border-color: var(--blue);
-  background: rgba(88, 174, 234, 0.08);
+  background: var(--blue-soft);
 }
 
 .attempt-slot select.suit-clubs {
   border-color: var(--green);
-  background: rgba(134, 169, 120, 0.08);
+  background: var(--green-soft);
 }
 
 .attempt-slot select.suit-diamonds {
   border-color: var(--orange);
-  background: rgba(245, 184, 87, 0.08);
+  background: var(--orange-soft);
 }
 
 .attempt-slot select option {
@@ -616,11 +617,11 @@ h2 {
 }
 
 .attempt-summary.is-good {
-  color: var(--green);
+  color: var(--success-ink);
 }
 
 .attempt-summary.is-warning {
-  color: #aa6b00;
+  color: var(--accent-ink);
 }
 
 .attempt-actions {
@@ -655,8 +656,8 @@ h2 {
 }
 
 .score-strip div:first-child {
-  border-color: rgba(255, 191, 24, 0.72);
-  background: var(--surface-warm);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .score-strip span,
@@ -771,13 +772,14 @@ h2 {
   --score-rail: clamp(30px, 5.5cqi, 50px);
   --score-gap: clamp(4px, 1cqi, 9px);
   --score-rule: 3px;
+  --score-bar-offset: 2px;
   --frame-arm: 9px;
   --frame-offset: clamp(6px, 1.1cqi, 10px);
   display: grid;
   grid-template-columns: var(--discard-width) minmax(0, 1fr);
   align-items: start;
   gap: var(--discard-gap);
-  inline-size: min(100%, 760px);
+  inline-size: min(100%, 600px);
   margin-inline: auto;
   padding: 18px 0 10px;
 }
@@ -830,12 +832,12 @@ h2 {
   position: absolute;
   inset:
     calc(-1 * var(--frame-offset))
-    calc(-1 * var(--score-gap))
-    calc(-1 * var(--score-gap))
+    calc(-1 * (var(--score-gap) + var(--score-rule)))
+    calc(-1 * (var(--score-gap) + var(--score-bar-offset) + var(--score-rule)))
     calc(-1 * var(--frame-offset));
   z-index: 1;
   pointer-events: none;
-  background: var(--yellow);
+  background: var(--accent);
   -webkit-mask:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpath d='M1.5 7.5V1.5H7.5' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") top left / var(--frame-arm) var(--frame-arm) no-repeat,
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpath d='M1.5 1.5H7.5V7.5' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") top right / var(--frame-arm) var(--frame-arm) no-repeat,
@@ -924,7 +926,7 @@ h2 {
   left: 0;
   width: var(--score-rule);
   border-radius: 999px;
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 .row-line strong,
@@ -946,12 +948,12 @@ h2 {
 .discard-line::before {
   content: "";
   position: absolute;
-  top: 2px;
+  top: var(--score-bar-offset);
   left: 12%;
   right: 12%;
   height: var(--score-rule);
   border-radius: 999px;
-  background: var(--yellow);
+  background: var(--accent);
 }
 
 .corner-line {
@@ -970,7 +972,7 @@ h2 {
   height: 20px;
   transform: translateY(-50%);
   border-radius: 2px;
-  background: var(--yellow);
+  background: var(--accent);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M2 7V2H7M13 2H18V7M18 13V18H13M7 18H2V13' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M2 7V2H7M13 2H18V7M18 13V18H13M7 18H2V13' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
@@ -980,13 +982,13 @@ h2 {
 }
 
 .playing-card {
-  border-width: 3px;
-  border-color: transparent;
+  border-width: 1px;
+  border-color: var(--card-hairline);
 }
 
 .playing-card.empty {
   border-width: 1px;
-  border-color: transparent;
+  border-color: var(--card-hairline);
   background: #e9ebe9;
   box-shadow: none;
 }
@@ -1037,8 +1039,8 @@ h2 {
 }
 
 .solution-group.is-active .solution-pill {
-  border-color: var(--yellow);
-  background: #fff7db;
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .solution-pill span {
@@ -1088,8 +1090,8 @@ h2 {
 }
 
 .variant-button.is-active {
-  border-color: var(--yellow);
-  background: #fff7db;
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .variant-button span {
@@ -1126,8 +1128,8 @@ h2 {
 }
 
 .bucket-item.has-score {
-  background: #fffdf5;
-  border-color: rgba(255, 191, 24, 0.7);
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
 .bucket-item strong,
