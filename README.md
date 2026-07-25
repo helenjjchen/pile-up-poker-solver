@@ -14,6 +14,7 @@ Current build:
 - HiGHS MIP and OR-Tools CP-SAT exact-model scaffolding for future certification work.
 
 Planning context lives in [docs/context-and-plan.md](./docs/context-and-plan.md).
+The visual and responsive design contract lives in [docs/design-system.md](./docs/design-system.md).
 
 ## Run
 

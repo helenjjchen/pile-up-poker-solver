@@ -30,10 +30,15 @@ for (const [token, value] of Object.entries({
   "--green": "#98b389",
   "--red": "#ffaaac",
   "--orange": "#fac16c",
+  "--radius-card": "8px",
 })) {
   assert.match(rootTokens, new RegExp(`${token}:\\s*${value}`), `${token} should match gameplay`);
 }
 assert.doesNotMatch(css, /--yellow|--surface-warm|rgba\(255,\s*191,\s*24|#fff7db|#fffdf5/i);
+
+const appShell = [...css.matchAll(/\.app-shell\s*\{([^}]*)\}/gs)][0][1];
+assert.match(appShell, /width:\s*min\(1140px,\s*100%\)/);
+assert.match(appShell, /padding-inline:\s*24px/);
 
 const sharedCards = ruleBody("\\.card-button,\\s*\\.playing-card");
 assert.match(sharedCards, /border:\s*1px solid var\(--card-hairline\)/);
@@ -52,7 +57,12 @@ const boardArea = ruleBody("\\.board-area");
 assert.match(boardArea, /--score-rule:\s*3px/);
 assert.match(boardArea, /--score-bar-offset:\s*2px/);
 assert.match(boardArea, /--frame-arm:\s*9px/);
-assert.match(boardArea, /inline-size:\s*min\(100%,\s*600px\)/);
+assert.match(boardArea, /inline-size:\s*min\(100%,\s*640px,\s*max\(520px,\s*calc\(74dvh - 281px\)\)\)/);
+
+const scoreStripLabels = ruleBody("\\.score-strip span");
+assert.match(scoreStripLabels, /font-size:\s*0\.74rem/);
+assert.match(scoreStripLabels, /white-space:\s*nowrap/);
+assert.doesNotMatch(css, /#resultModeLabel\s*\{/);
 
 const cornerFrame = ruleBody("\\.board-grid::before");
 assert.match(cornerFrame, /display:\s*none/);
@@ -68,6 +78,9 @@ assert.match(horizontalRules, /top:\s*var\(--score-bar-offset\)/);
 assert.match(horizontalRules, /height:\s*var\(--score-rule\)/);
 assert.match(horizontalRules, /background:\s*var\(--accent\)/);
 
-assert.match(html, /styles\.css\?v=design-system-36/);
+const horizontalLabels = ruleBody("\\.column-line,\\s*\\.discard-line");
+assert.match(horizontalLabels, /align-content:\s*start/);
+
+assert.match(html, /styles\.css\?v=design-system-46/);
 
 console.log("UI contract tests passed.");

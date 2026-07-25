@@ -26,8 +26,13 @@
   --success-ink: var(--green-ink);
   --radius-sm: 7px;
   --radius-control: 10px;
-  --radius-card: 12px;
+  --radius-card: 8px;
   --radius-panel: 14px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
   --shadow: 0 16px 36px rgba(23, 24, 31, 0.075);
   --shadow-card: 0 6px 14px rgba(23, 24, 31, 0.055);
   --card-aspect: 0.72;
@@ -80,18 +85,19 @@ button:disabled {
 }
 
 .app-shell {
-  width: min(1420px, 100%);
+  /* Keep the complete two-panel layout fixed; wider viewports become gutters. */
+  width: min(1140px, 100%);
   margin: 0 auto;
-  padding: 24px;
+  padding-block: 24px;
+  padding-inline: 24px;
 }
 
 .topbar {
   display: flex;
   align-items: end;
   justify-content: space-between;
-  gap: 24px;
-  padding: 8px 0 22px;
-  border-bottom: 1px solid var(--line);
+  gap: var(--space-5);
+  padding: var(--space-2) 0 0;
 }
 
 .eyebrow {
@@ -138,8 +144,8 @@ h2 {
 .workspace {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
-  gap: 22px;
-  padding-top: 24px;
+  gap: var(--space-5);
+  padding-top: var(--space-5);
 }
 
 .picker-panel,
@@ -152,12 +158,12 @@ h2 {
 
 .picker-panel {
   align-self: start;
-  padding: 18px;
+  padding: var(--space-5);
 }
 
 .result-panel {
   min-width: 0;
-  padding: clamp(14px, 2.2vw, 24px);
+  padding: var(--space-5);
   container: result / inline-size;
 }
 
@@ -165,8 +171,8 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 .panel-heading span,
@@ -401,9 +407,9 @@ h2 {
 .manual-picker-panel,
 .grid-attempt-panel {
   display: grid;
-  gap: 10px;
-  margin-top: 14px;
-  padding: 10px;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   background: #fbfbfa;
@@ -413,7 +419,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 38px;
   color: var(--ink);
   cursor: pointer;
@@ -456,7 +462,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .section-heading span {
@@ -476,7 +482,7 @@ h2 {
   display: grid;
   gap: 3px;
   min-height: 58px;
-  padding: 10px 12px;
+  padding: var(--space-3);
   border: 1px dashed rgba(23, 24, 31, 0.28);
   border-radius: var(--radius-control);
   background: var(--surface-2);
@@ -525,7 +531,7 @@ h2 {
 
 .attempt-editor {
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .attempt-label {
@@ -626,7 +632,7 @@ h2 {
 
 .attempt-actions {
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .attempt-actions .secondary-button,
@@ -642,14 +648,14 @@ h2 {
 
 .score-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 10px;
-  margin-bottom: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .score-strip div {
-  min-height: 70px;
-  padding: 11px 12px;
+  min-height: 72px;
+  padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   background: var(--surface-2);
@@ -671,6 +677,7 @@ h2 {
   font-weight: 800;
   letter-spacing: 0.025em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .score-strip strong {
@@ -679,7 +686,7 @@ h2 {
 }
 
 .diagnostics-panel {
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   background: #fbfbfa;
@@ -688,7 +695,7 @@ h2 {
 .diagnostics-panel summary,
 .scoring-explainer summary {
   min-height: 42px;
-  padding: 10px 14px;
+  padding: var(--space-3) var(--space-4);
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 900;
@@ -698,8 +705,8 @@ h2 {
 
 .diagnostics-content {
   display: grid;
-  gap: 10px;
-  padding: 0 12px 12px;
+  gap: var(--space-3);
+  padding: 0 var(--space-3) var(--space-3);
 }
 
 .diagnostics-panel:not([open]) .diagnostics-content {
@@ -727,9 +734,9 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: var(--space-3);
   min-height: 68px;
-  padding: 12px 14px;
+  padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   background: var(--surface-2);
@@ -779,13 +786,13 @@ h2 {
   grid-template-columns: var(--discard-width) minmax(0, 1fr);
   align-items: start;
   gap: var(--discard-gap);
-  inline-size: min(100%, 600px);
+  inline-size: min(100%, 640px, max(520px, calc(74dvh - 281px)));
   margin-inline: auto;
-  padding: 18px 0 10px;
+  padding: var(--space-3) 0;
 }
 
 .area-label {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2);
   font-size: clamp(0.72rem, 1.6cqi, 0.82rem);
   font-weight: 800;
   letter-spacing: 0.015em;
@@ -939,6 +946,7 @@ h2 {
 
 .column-line,
 .discard-line {
+  align-content: start;
   min-height: clamp(42px, 7.5cqi, 52px);
   padding-top: 12px;
   text-align: center;
@@ -996,9 +1004,9 @@ h2 {
 .solutions-row {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 58px;
-  margin: 8px 0 18px;
+  margin: var(--space-3) 0 var(--space-4);
   overflow-x: auto;
   padding-bottom: 4px;
 }
@@ -1102,12 +1110,12 @@ h2 {
 }
 
 .bucket-panel {
-  padding: 16px;
+  padding: var(--space-4);
   box-shadow: none;
 }
 
 .bucket-panel {
-  margin-bottom: 18px;
+  margin-bottom: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   background: var(--surface);
@@ -1148,7 +1156,7 @@ h2 {
   font-weight: 800;
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1140px) {
   .app-shell {
     padding: 16px;
   }
@@ -1198,15 +1206,9 @@ h2 {
   }
 }
 
-@media (max-width: 560px) {
-  .app-shell {
-    padding: 10px;
-  }
-
+@media (max-width: 700px) {
   .topbar {
-    display: grid;
-    gap: 12px;
-    padding: 8px 0 16px;
+    gap: var(--space-3);
   }
 
   h1 {
@@ -1214,10 +1216,15 @@ h2 {
   }
 
   .topbar-score {
-    width: 100%;
-    min-width: 0;
+    min-width: 128px;
+    padding: var(--space-3) var(--space-4);
     font-size: 1.25rem;
-    text-align: left;
+  }
+}
+
+@media (max-width: 560px) {
+  .app-shell {
+    padding: 10px;
   }
 
   .diagnostics-panel,
@@ -1240,8 +1247,9 @@ h2 {
     width: 100%;
   }
 
+  .picker-panel,
   .result-panel {
-    padding: 12px;
+    padding: var(--space-3);
   }
 
   .solutions-row {
@@ -1255,6 +1263,22 @@ h2 {
 
   .bucket-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 460px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: var(--space-4);
+  }
+
+  .topbar-score {
+    width: 100%;
+    min-width: 0;
+    justify-self: stretch;
+    text-align: right;
   }
 }
 
