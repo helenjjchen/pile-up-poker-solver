@@ -119,6 +119,7 @@ export function multiplierForHandCount(handCount) {
 
 const HAND_BASE_VALUES = [...new Set(Object.values(HANDS).map((hand) => hand.base))];
 let payoutFeasibleTotals = null;
+let payoutFeasibleTotalsByHandCount = null;
 
 function buildPayoutFeasibleTotals() {
   // This is intentionally a scoring-rule feasibility check, not a solver. It
@@ -140,27 +141,50 @@ function buildPayoutFeasibleTotals() {
   }
 
   const totals = new Set();
+  const totalsByHandCount = new Map();
+  const addTotal = (handCount, total) => {
+    totals.add(total);
+    totalsByHandCount.set(
+      handCount,
+      (totalsByHandCount.get(handCount) ?? new Set()).add(total),
+    );
+  };
   states.forEach((state) => {
     HAND_BASE_VALUES.forEach((cornerValue) => {
       const gridHandCount = state.handCount + (cornerValue > 0 ? 1 : 0);
       const gridBase = state.base + cornerValue * 2;
-      totals.add(gridBase * multiplierForHandCount(gridHandCount));
+      addTotal(gridHandCount, gridBase * multiplierForHandCount(gridHandCount));
 
       if (gridHandCount === 9) {
         HAND_BASE_VALUES.filter((value) => value > 0).forEach((discardValue) => {
-          totals.add((gridBase + discardValue * 3) * multiplierForHandCount(10));
+          addTotal(10, (gridBase + discardValue * 3) * multiplierForHandCount(10));
         });
       }
     });
   });
 
-  return totals;
+  return { totals, totalsByHandCount };
+}
+
+function ensurePayoutFeasibility() {
+  if (payoutFeasibleTotals && payoutFeasibleTotalsByHandCount) return;
+  const feasibility = buildPayoutFeasibleTotals();
+  payoutFeasibleTotals = feasibility.totals;
+  payoutFeasibleTotalsByHandCount = feasibility.totalsByHandCount;
 }
 
 export function isPayoutFeasibleTotal(total) {
   if (!Number.isInteger(total) || total < 0) return false;
-  payoutFeasibleTotals ??= buildPayoutFeasibleTotals();
+  ensurePayoutFeasibility();
   return payoutFeasibleTotals.has(total);
+}
+
+export function isPayoutFeasibleForHandCount(total, handCount) {
+  if (!Number.isInteger(total) || !Number.isInteger(handCount) || handCount < 0 || handCount > 10) {
+    return false;
+  }
+  ensurePayoutFeasibility();
+  return payoutFeasibleTotalsByHandCount.get(handCount)?.has(total) ?? false;
 }
 
 export function theoreticalMaxBaseForHandCount(handCount) {

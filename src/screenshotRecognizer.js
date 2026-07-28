@@ -1,13 +1,11 @@
 import { RANK_GLYPH_MASK_SIZE, RANK_GLYPH_TEMPLATES } from "./rankGlyphTemplates.js";
 import { SCORE_GLYPH_MASK_SIZE, SCORE_GLYPH_TEMPLATES } from "./scoreGlyphTemplates.js";
-import { isPayoutFeasibleTotal } from "./scoring.js";
-
-const SUIT_REFERENCES = {
-  H: [245, 151, 157],
-  S: [83, 172, 232],
-  C: [134, 165, 122],
-  D: [245, 181, 88],
-};
+import { SUIT_GLYPH_MASK_SIZE, SUIT_GLYPH_TEMPLATES } from "./suitGlyphTemplates.js";
+import {
+  isPayoutFeasibleForHandCount,
+  isPayoutFeasibleTotal,
+  scorePlacement,
+} from "./scoring.js?v=scoring-feasibility-1";
 
 const GRID_CENTERS_X = [0.306, 0.476, 0.646, 0.815];
 const GRID_CENTERS_Y = [0.236, 0.343, 0.45, 0.556];
@@ -47,8 +45,12 @@ const TEMPLATE_DISCARD_RANK_CROPS = [
   { xStart: 0.02, xEnd: 0.25, yStart: -0.02, yEnd: 0.22 },
 ];
 const MIN_TEMPLATE_RANK_SCORE = 0.52;
-const CARD_COLOR_DISTANCE_LIMIT = 13000;
+const MIN_FOCUSED_TEMPLATE_RANK_SCORE = 0.45;
+const MIN_FOCUSED_TEMPLATE_RANK_MARGIN = 0.07;
+const MIN_SUIT_GLYPH_SCORE = 0.58;
 const MAX_DISPLAYED_SCORE_TOTAL = 40000;
+const SCORE_CONTRAST_THRESHOLDS = [900, 2500, 6400, 10000, 14400];
+const SUITS = ["H", "S", "C", "D"];
 
 function colorDistance(color, reference) {
   return (
@@ -145,77 +147,118 @@ function pixelAt(imageData, x, y) {
   return [imageData.data[index], imageData.data[index + 1], imageData.data[index + 2]];
 }
 
-function nearestSuit(color) {
-  return Object.entries(SUIT_REFERENCES).sort(
-    ([, a], [, b]) => colorDistance(color, a) - colorDistance(color, b),
-  )[0][0];
+function colorChroma(color) {
+  return Math.max(...color) - Math.min(...color);
 }
 
-function classifySuit(imageData, rect) {
-  const counts = { H: 0, S: 0, C: 0, D: 0 };
-  const width = rect.right - rect.left;
-  const height = rect.bottom - rect.top;
-  const xStart = Math.floor(rect.left + width * 0.5);
-  const xEnd = Math.floor(rect.left + width * 0.96);
-  const yStart = Math.floor(rect.top + height * 0.02);
-  const yEnd = Math.floor(rect.top + height * 0.25);
+function percentile(values, ratio) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * ratio)))];
+}
 
-  for (let y = yStart; y < yEnd; y += 1) {
-    for (let x = xStart; x < xEnd; x += 1) {
-      const color = pixelAt(imageData, x, y);
-      const max = Math.max(...color);
-      const min = Math.min(...color);
-      if (max < 95 || max - min < 20) continue;
-      counts[nearestSuit(color)] += 1;
+function adaptiveChromaThreshold(colors) {
+  const chromas = colors.map(colorChroma).filter((chroma) => chroma > 0);
+  return Math.max(9, Math.min(25, percentile(chromas, 0.9) * 0.35));
+}
+
+function chromaticPointsFromCrop(imageData, rect, crop, topEdge = null) {
+  const width = rectWidth(rect);
+  const height = rectHeight(rect);
+  const xStart = Math.floor(width * crop.xStart);
+  const xEnd = Math.ceil(width * crop.xEnd);
+  const yStart = Math.floor(height * crop.yStart);
+  const yEnd = Math.ceil(height * crop.yEnd);
+  const cropWidth = Math.max(1, xEnd - xStart);
+  const cropHeight = Math.max(1, yEnd - yStart);
+  const samples = [];
+
+  for (let localY = yStart; localY < yEnd; localY += 1) {
+    for (let localX = xStart; localX < xEnd; localX += 1) {
+      const x = Math.round(rect.left + localX);
+      const y = Math.round(
+        topEdge ? topEdge.intercept + topEdge.slope * x + localY : rect.top + localY,
+      );
+      if (x < 0 || x >= imageData.width || y < 0 || y >= imageData.height) continue;
+      samples.push({
+        localX: localX - xStart,
+        localY: localY - yStart,
+        color: pixelAt(imageData, x, y),
+      });
     }
   }
 
-  const [suit, count] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-  return { suit, confidence: Math.min(1, count / 24) };
-}
-
-function rankPoints(imageData, rect, suit, crop) {
-  const reference = SUIT_REFERENCES[suit];
-  const width = rect.right - rect.left;
-  const height = rect.bottom - rect.top;
-  // Face cards use character art in the middle of the card, so only read the
-  // small top-left rank glyph. The suit is read separately from color.
-  const xStart = Math.floor(rect.left + width * crop.xStart);
-  const xEnd = Math.floor(rect.left + width * crop.xEnd);
-  const yStart = Math.floor(rect.top + height * crop.yStart);
-  const yEnd = Math.floor(rect.top + height * crop.yEnd);
-  const rawPoints = [];
-
-  for (let y = yStart; y < yEnd; y += 1) {
-    for (let x = xStart; x < xEnd; x += 1) {
-      const color = pixelAt(imageData, x, y);
-      const max = Math.max(...color);
-      const min = Math.min(...color);
-      if (max < 100 || max - min < 10) continue;
-      if (colorDistance(color, reference) < 14000) {
-        rawPoints.push([x - xStart, y - yStart]);
-      }
-    }
-  }
-
-  if (!rawPoints.length) return null;
-
-  const minX = Math.min(...rawPoints.map(([x]) => x));
-  const maxX = Math.max(...rawPoints.map(([x]) => x));
-  const minY = Math.min(...rawPoints.map(([, y]) => y));
-  const maxY = Math.max(...rawPoints.map(([, y]) => y));
-
+  const threshold = adaptiveChromaThreshold(samples.map((sample) => sample.color));
+  const selected = samples.filter(
+    ({ color }) => Math.max(...color) > 55 && colorChroma(color) >= threshold,
+  );
   return {
-    width: maxX - minX + 1,
-    height: maxY - minY + 1,
-    points: rawPoints.map(([x, y]) => [x - minX, y - minY]),
+    width: cropWidth,
+    height: cropHeight,
+    points: selected.map(({ localX, localY }) => [localX, localY]),
+    colorByPoint: new Map(
+      selected.map(({ localX, localY, color }) => [`${localX},${localY}`, color]),
+    ),
   };
 }
 
-function isRankInk(color, reference) {
+function cardSurfaceColor(imageData, rect, topEdge = null) {
+  const width = rectWidth(rect);
+  const height = rectHeight(rect);
+  const samples = [];
+  const xStart = Math.floor(width * 0.38);
+  const xEnd = Math.ceil(width * 0.62);
+  const yStart = Math.floor(height * 0.055);
+  const yEnd = Math.ceil(height * 0.18);
+
+  for (let localY = yStart; localY < yEnd; localY += 2) {
+    for (let localX = xStart; localX < xEnd; localX += 2) {
+      const x = Math.round(rect.left + localX);
+      const y = Math.round(
+        topEdge ? topEdge.intercept + topEdge.slope * x + localY : rect.top + localY,
+      );
+      if (x < 0 || x >= imageData.width || y < 0 || y >= imageData.height) continue;
+      samples.push(pixelAt(imageData, x, y));
+    }
+  }
+  if (!samples.length) return [255, 255, 255];
+  return [0, 1, 2].map((channel) => median(samples.map((color) => color[channel])));
+}
+
+function isRankInk(color, background) {
   const max = Math.max(...color);
-  const min = Math.min(...color);
-  return max >= 100 && max - min >= 10 && colorDistance(color, reference) < 14000;
+  return (
+    colorDistance(color, background) > 900 &&
+    (colorChroma(color) >= 4 || max < 185)
+  );
+}
+
+function rankPoints(imageData, rect, crop, topEdge = null) {
+  // Face cards use character art in the middle of the card, so only read the
+  // small top-left rank glyph. The foreground is measured against this card's
+  // own blank surface, so a theme can use any four colors.
+  const width = rectWidth(rect);
+  const height = rectHeight(rect);
+  const background = cardSurfaceColor(imageData, rect, topEdge);
+  const xStart = Math.floor(width * crop.xStart);
+  const xEnd = Math.ceil(width * crop.xEnd);
+  const yStart = Math.floor(height * crop.yStart);
+  const yEnd = Math.ceil(height * crop.yEnd);
+  const points = [];
+
+  for (let localY = yStart; localY < yEnd; localY += 1) {
+    for (let localX = xStart; localX < xEnd; localX += 1) {
+      const x = Math.round(rect.left + localX);
+      const y = Math.round(
+        topEdge ? topEdge.intercept + topEdge.slope * x + localY : rect.top + localY,
+      );
+      if (x < 0 || x >= imageData.width || y < 0 || y >= imageData.height) continue;
+      if (isRankInk(pixelAt(imageData, x, y), background)) {
+        points.push([localX - xStart, localY - yStart]);
+      }
+    }
+  }
+  return normalizePoints(points);
 }
 
 function cardTopEdgeLine(imageData, rect) {
@@ -246,27 +289,9 @@ function cardTopEdgeLine(imageData, rect) {
   return { intercept: meanY - slope * meanX, slope };
 }
 
-function rankPointsFromCardFrame(imageData, rect, suit, crop, topEdge) {
+function rankPointsFromCardFrame(imageData, rect, crop, topEdge) {
   if (!topEdge) return null;
-  const reference = SUIT_REFERENCES[suit];
-  const width = rectWidth(rect);
-  const height = rectHeight(rect);
-  const xStart = Math.floor(width * crop.xStart);
-  const xEnd = Math.ceil(width * crop.xEnd);
-  const yStart = Math.floor(height * crop.yStart);
-  const yEnd = Math.ceil(height * crop.yEnd);
-  const rawPoints = [];
-
-  for (let localY = yStart; localY < yEnd; localY += 1) {
-    for (let localX = xStart; localX < xEnd; localX += 1) {
-      const x = Math.round(rect.left + localX);
-      const y = Math.round(topEdge.intercept + topEdge.slope * x + localY);
-      if (x < 0 || x >= imageData.width || y < 0 || y >= imageData.height) continue;
-      if (isRankInk(pixelAt(imageData, x, y), reference)) rawPoints.push([localX, localY]);
-    }
-  }
-
-  return normalizePoints(rawPoints);
+  return rankPoints(imageData, rect, crop, topEdge);
 }
 
 function normalizedRankMask(mask) {
@@ -310,15 +335,28 @@ function rankTemplateScore(mask, template) {
   return maskCount && templateCount ? (2 * intersection) / (maskCount + templateCount) : 0;
 }
 
-function templateRankCandidates(imageData, rect, suit, zone) {
+function templateRankCandidatesForMask(rawMask) {
+  const mask = normalizedRankMask(
+    removeArtifactComponents(rawMask ?? { points: [], width: 0, height: 0 }),
+  );
+  if (!mask) return [];
+  return Object.entries(RANK_GLYPH_TEMPLATES)
+    .map(([rank, template]) => ({
+      rank,
+      confidence: rankTemplateScore(mask, template),
+    }))
+    .sort((first, second) => second.confidence - first.confidence);
+}
+
+function templateRankCandidates(imageData, rect, zone) {
   const masks = [];
   const regularCrops = zone === "discard" ? DISCARD_RANK_CROPS : [TEMPLATE_GRID_RANK_CROP, ...GRID_RANK_CROPS];
-  regularCrops.forEach((crop) => masks.push(rankPoints(imageData, rect, suit, crop)));
+  const topEdge = zone === "discard" ? cardTopEdgeLine(imageData, rect) : null;
+  regularCrops.forEach((crop) => masks.push(rankPoints(imageData, rect, crop, topEdge)));
 
   if (zone === "discard") {
-    const topEdge = cardTopEdgeLine(imageData, rect);
     TEMPLATE_DISCARD_RANK_CROPS.forEach((crop) => {
-      masks.push(rankPointsFromCardFrame(imageData, rect, suit, crop, topEdge));
+      masks.push(rankPointsFromCardFrame(imageData, rect, crop, topEdge));
     });
   }
 
@@ -364,6 +402,38 @@ function connectedComponents(points, width, height) {
     }
 
     if (component.length > 4) components.push(component);
+  }
+
+  return components;
+}
+
+function connectedComponents8(points, width, height) {
+  const filled = new Set(points.map(([x, y]) => `${x},${y}`));
+  const components = [];
+
+  while (filled.size) {
+    const first = filled.values().next().value;
+    filled.delete(first);
+    const stack = [first.split(",").map(Number)];
+    const component = [];
+
+    while (stack.length) {
+      const [x, y] = stack.pop();
+      component.push([x, y]);
+      for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+          if (!offsetX && !offsetY) continue;
+          const nextX = x + offsetX;
+          const nextY = y + offsetY;
+          if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height) continue;
+          const key = `${nextX},${nextY}`;
+          if (!filled.has(key)) continue;
+          filled.delete(key);
+          stack.push([nextX, nextY]);
+        }
+      }
+    }
+    components.push(component);
   }
 
   return components;
@@ -437,13 +507,178 @@ function removeArtifactComponents(mask) {
   const components = connectedComponents(mask.points, mask.width, mask.height);
   if (components.length <= 1) return mask;
 
-  const largest = Math.max(...components.map((component) => component.length));
+  const withoutEdgeLines = components.filter((component) => {
+    const xs = component.map(([x]) => x);
+    const ys = component.map(([, y]) => y);
+    const componentWidth = Math.max(...xs) - Math.min(...xs) + 1;
+    const componentHeight = Math.max(...ys) - Math.min(...ys) + 1;
+    const componentTop = Math.min(...ys);
+
+    // Tight card detection can put the colored top border inside the rank
+    // crop. It appears as a separate one-pixel line and shifts a 6/9's hole
+    // far enough left to resemble an A. Remove only that border-shaped
+    // artifact; tall secondary components such as the "1" in 10 remain.
+    return !(
+      componentTop <= 2 &&
+      componentHeight <= 2 &&
+      componentWidth >= mask.width * 0.75
+    );
+  });
+  const usableComponents = withoutEdgeLines.length ? withoutEdgeLines : components;
+  const largest = Math.max(...usableComponents.map((component) => component.length));
   const minimumSize = Math.max(18, largest * 0.12);
-  const filteredPoints = components
+  const filteredPoints = usableComponents
     .filter((component) => component.length >= minimumSize)
     .flatMap((component) => component);
 
   return normalizePoints(filteredPoints) ?? mask;
+}
+
+function normalizedSuitMask(points) {
+  const normalized = normalizePoints(points);
+  if (!normalized) return null;
+
+  const outputWidth = SUIT_GLYPH_MASK_SIZE.width;
+  const outputHeight = SUIT_GLYPH_MASK_SIZE.height;
+  const padding = 2;
+  const innerWidth = outputWidth - padding * 2;
+  const innerHeight = outputHeight - padding * 2;
+  const scale = Math.min(innerWidth / normalized.width, innerHeight / normalized.height);
+  const scaledWidth = Math.max(1, Math.round(normalized.width * scale));
+  const scaledHeight = Math.max(1, Math.round(normalized.height * scale));
+  const offsetX = Math.floor((outputWidth - scaledWidth) / 2);
+  const offsetY = Math.floor((outputHeight - scaledHeight) / 2);
+  const filled = new Set(normalized.points.map(([x, y]) => `${x},${y}`));
+  const output = new Uint8Array(outputWidth * outputHeight);
+
+  for (let targetY = 0; targetY < scaledHeight; targetY += 1) {
+    const sourceYStart = Math.floor((targetY * normalized.height) / scaledHeight);
+    const sourceYEnd = Math.max(
+      sourceYStart + 1,
+      Math.ceil(((targetY + 1) * normalized.height) / scaledHeight),
+    );
+    for (let targetX = 0; targetX < scaledWidth; targetX += 1) {
+      const sourceXStart = Math.floor((targetX * normalized.width) / scaledWidth);
+      const sourceXEnd = Math.max(
+        sourceXStart + 1,
+        Math.ceil(((targetX + 1) * normalized.width) / scaledWidth),
+      );
+      let hit = false;
+      for (let sourceY = sourceYStart; sourceY < sourceYEnd && !hit; sourceY += 1) {
+        for (let sourceX = sourceXStart; sourceX < sourceXEnd; sourceX += 1) {
+          if (!filled.has(`${sourceX},${sourceY}`)) continue;
+          hit = true;
+          break;
+        }
+      }
+      if (hit) output[(offsetY + targetY) * outputWidth + offsetX + targetX] = 1;
+    }
+  }
+
+  return output;
+}
+
+function cosineMaskScore(mask, template) {
+  let intersection = 0;
+  let maskCount = 0;
+  let templateCount = 0;
+  for (let index = 0; index < mask.length; index += 1) {
+    maskCount += mask[index];
+    templateCount += template[index];
+    intersection += mask[index] & template[index];
+  }
+  return maskCount && templateCount ? intersection / Math.sqrt(maskCount * templateCount) : 0;
+}
+
+function componentBounds(component) {
+  const xs = component.map(([x]) => x);
+  const ys = component.map(([, y]) => y);
+  const left = Math.min(...xs);
+  const right = Math.max(...xs);
+  const top = Math.min(...ys);
+  const bottom = Math.max(...ys);
+  return {
+    left,
+    right,
+    top,
+    bottom,
+    width: right - left + 1,
+    height: bottom - top + 1,
+    centerX: (left + right) / 2,
+    centerY: (top + bottom) / 2,
+  };
+}
+
+function componentInkColor(component, colorByPoint) {
+  const colors = component
+    .map(([x, y]) => colorByPoint.get(`${x},${y}`))
+    .filter(Boolean)
+    .sort((first, second) => colorChroma(second) - colorChroma(first));
+  const strongest = colors.slice(0, Math.max(1, Math.ceil(colors.length * 0.4)));
+  if (!strongest.length) return null;
+  return [0, 1, 2].map((channel) => Math.round(median(strongest.map((color) => color[channel]))));
+}
+
+function classifySuit(imageData, rect, zone) {
+  const crop =
+    zone === "discard"
+      ? { xStart: 0.48, xEnd: 0.98, yStart: -0.04, yEnd: 0.3 }
+      : { xStart: 0.48, xEnd: 0.98, yStart: 0, yEnd: 0.3 };
+  const topEdge = zone === "discard" ? cardTopEdgeLine(imageData, rect) : null;
+  const glyphCrop = chromaticPointsFromCrop(imageData, rect, crop, topEdge);
+  const components = connectedComponents8(glyphCrop.points, glyphCrop.width, glyphCrop.height);
+  const candidates = [];
+
+  components.forEach((component) => {
+    const bounds = componentBounds(component);
+    const aspect = Math.max(bounds.width / bounds.height, bounds.height / bounds.width);
+    if (component.length < 3 || bounds.width < 2 || bounds.height < 2) return;
+    if (bounds.width > glyphCrop.width * 0.6 || bounds.height > glyphCrop.height * 0.8) return;
+    if (aspect >= 2.8) return;
+
+    const mask = normalizedSuitMask(component);
+    if (!mask) return;
+    const suitScores = Object.fromEntries(
+      Object.entries(SUIT_GLYPH_TEMPLATES).map(([suit, template]) => [
+        suit,
+        cosineMaskScore(mask, template),
+      ]),
+    );
+    const ranked = Object.entries(suitScores).sort((a, b) => b[1] - a[1]);
+    const normalizedCenterX = bounds.centerX / glyphCrop.width;
+    const normalizedCenterY = bounds.centerY / glyphCrop.height;
+    const centerDistance = Math.hypot(normalizedCenterX - 0.62, normalizedCenterY - 0.55);
+    const touchesEdge =
+      bounds.left <= 1 ||
+      bounds.top <= 1 ||
+      bounds.right >= glyphCrop.width - 2 ||
+      bounds.bottom >= glyphCrop.height - 2;
+    const selectionScore =
+      ranked[0][1] +
+      Math.min(0.06, component.length / Math.max(1, glyphCrop.width * glyphCrop.height)) -
+      centerDistance * 0.04 -
+      (touchesEdge ? 0.08 : 0);
+    candidates.push({
+      suit: ranked[0][0],
+      confidence: ranked[0][1],
+      margin: ranked[0][1] - ranked[1][1],
+      suitScores,
+      inkColor: componentInkColor(component, glyphCrop.colorByPoint),
+      selectionScore,
+    });
+  });
+
+  const best = candidates.sort((first, second) => second.selectionScore - first.selectionScore)[0];
+  if (!best || best.confidence < MIN_SUIT_GLYPH_SCORE) {
+    return {
+      suit: null,
+      confidence: best?.confidence ?? 0,
+      margin: best?.margin ?? 0,
+      suitScores: best?.suitScores ?? Object.fromEntries(SUITS.map((suit) => [suit, 0])),
+      inkColor: best?.inkColor ?? null,
+    };
+  }
+  return best;
 }
 
 function classifyRank(features) {
@@ -531,8 +766,8 @@ function classifyRank(features) {
   return { rank: null, confidence: 0 };
 }
 
-function classifyRankCandidate(imageData, rect, suit, crop) {
-  const rawMask = rankPoints(imageData, rect, suit, crop);
+function classifyRankCandidate(imageData, rect, crop, topEdge = null) {
+  const rawMask = rankPoints(imageData, rect, crop, topEdge);
   if (!rawMask) return { rank: null, confidence: 0 };
 
   const mask = removeArtifactComponents(rawMask);
@@ -572,21 +807,72 @@ function classifyRankCandidate(imageData, rect, suit, crop) {
   return classifyRank(features);
 }
 
-function classifyRankFromSlot(imageData, rect, suit, zone) {
-  const templateCandidates = templateRankCandidates(imageData, rect, suit, zone);
+function classifyRankFromSlot(imageData, rect, zone) {
+  const templateCandidates = templateRankCandidates(imageData, rect, zone);
   const bestTemplate = templateCandidates[0];
-  if (bestTemplate?.confidence >= MIN_TEMPLATE_RANK_SCORE) {
-    return {
-      ...bestTemplate,
-      alternatives: templateCandidates.slice(1),
-    };
-  }
-
   const crops = zone === "discard" ? DISCARD_RANK_CROPS : GRID_RANK_CROPS;
-  const candidates = crops.map((crop) => classifyRankCandidate(imageData, rect, suit, crop));
+  const topEdge = zone === "discard" ? cardTopEdgeLine(imageData, rect) : null;
+  const candidates = crops.map((crop) =>
+    classifyRankCandidate(imageData, rect, crop, topEdge),
+  );
   const rankedCandidates = candidates
     .filter((candidate) => candidate?.rank)
     .sort((a, b) => b.confidence - a.confidence);
+
+  // The first grid crop is intentionally tight around the corner rank. When
+  // a wider crop contains a recolored antialiasing fragment, the overall
+  // template can fall below the normal floor and the generic shape heuristic
+  // can confuse a 7 with J. A distinct focused match is better evidence than
+  // that low-score fallback.
+  const focusedTemplateCandidates =
+    zone === "grid"
+      ? templateRankCandidatesForMask(rankPoints(imageData, rect, GRID_RANK_CROPS[0]))
+      : [];
+  const focusedTemplate = focusedTemplateCandidates[0];
+  const focusedMargin =
+    (focusedTemplate?.confidence ?? 0) -
+    (focusedTemplateCandidates[1]?.confidence ?? 0);
+  if (
+    (!bestTemplate || bestTemplate.confidence < MIN_TEMPLATE_RANK_SCORE) &&
+    focusedTemplate?.confidence >= MIN_FOCUSED_TEMPLATE_RANK_SCORE &&
+    focusedMargin >= MIN_FOCUSED_TEMPLATE_RANK_MARGIN
+  ) {
+    const alternatives = rankedCandidates
+      .filter((candidate) => candidate.rank !== focusedTemplate.rank)
+      .concat(templateCandidates, focusedTemplateCandidates.slice(1))
+      .sort((a, b) => b.confidence - a.confidence)
+      .filter(
+        (candidate, index, all) =>
+          candidate.rank !== focusedTemplate.rank &&
+          all.findIndex((entry) => entry.rank === candidate.rank) === index,
+      )
+      .slice(0, 8);
+    return {
+      ...focusedTemplate,
+      confidence: Math.max(0.62, focusedTemplate.confidence),
+      alternatives,
+    };
+  }
+
+  if (bestTemplate?.confidence >= MIN_TEMPLATE_RANK_SCORE) {
+    // The 0.52 overlap floor was established from verified glyph fixtures;
+    // raw Dice overlap is not itself a probability. Put an accepted template
+    // on the same calibrated confidence scale as the heuristic recognizer.
+    // Margin and heuristic agreement remain useful supporting evidence and
+    // alternatives are retained for deck-level conflict resolution.
+    const confidence = Math.max(0.62, bestTemplate.confidence);
+    const alternatives = rankedCandidates
+      .filter((candidate) => candidate.rank !== bestTemplate.rank)
+      .concat(templateCandidates.slice(1))
+      .sort((a, b) => b.confidence - a.confidence)
+      .filter(
+        (candidate, index, all) =>
+          all.findIndex((entry) => entry.rank === candidate.rank) === index,
+      )
+      .slice(0, 8);
+    return { ...bestTemplate, confidence, alternatives };
+  }
+
   const bestCandidate = rankedCandidates[0] ?? { rank: null, confidence: 0 };
   const alternatives = rankedCandidates
     .filter((candidate) => candidate.rank !== bestCandidate.rank)
@@ -599,15 +885,20 @@ function classifyRankFromSlot(imageData, rect, suit, zone) {
 }
 
 function recognizeSlot(imageData, rect, zone) {
-  const suitResult = classifySuit(imageData, rect);
-  const rankResult = classifyRankFromSlot(imageData, rect, suitResult.suit, zone);
+  const suitResult = classifySuit(imageData, rect, zone);
+  const rankResult = classifyRankFromSlot(imageData, rect, zone);
   return {
-    cardId: rankResult.rank ? `${rankResult.rank}${suitResult.suit}` : null,
+    cardId: rankResult.rank && suitResult.suit ? `${rankResult.rank}${suitResult.suit}` : null,
     rank: rankResult.rank,
     suit: suitResult.suit,
     confidence: Math.min(suitResult.confidence, rankResult.confidence),
+    rankConfidence: rankResult.confidence,
+    suitConfidence: suitResult.confidence,
+    suitMargin: suitResult.margin,
+    suitScores: suitResult.suitScores,
+    inkColor: suitResult.inkColor,
     alternatives: rankResult.alternatives.map((alternative) => ({
-      cardId: `${alternative.rank}${suitResult.suit}`,
+      cardId: suitResult.suit ? `${alternative.rank}${suitResult.suit}` : null,
       rank: alternative.rank,
       suit: suitResult.suit,
       confidence: Math.min(suitResult.confidence, alternative.confidence),
@@ -622,6 +913,149 @@ function emptySlot() {
     suit: null,
     confidence: 0,
   };
+}
+
+function colorVectorDistance(first, second) {
+  return Math.sqrt(colorDistance(first, second));
+}
+
+function meanColor(colors) {
+  return [0, 1, 2].map(
+    (channel) => colors.reduce((sum, color) => sum + color[channel], 0) / colors.length,
+  );
+}
+
+function anonymousColorClusters(slots) {
+  const entries = slots.filter(
+    (slot) => slot.inkColor?.length === 3 && slot.suitScores && slot.rank,
+  );
+  if (entries.length < 8) return null;
+
+  const seeds = [[...entries[0].inkColor]];
+  while (seeds.length < 4) {
+    const next = entries
+      .map((entry) => ({
+        color: entry.inkColor,
+        distance: Math.min(...seeds.map((seed) => colorVectorDistance(entry.inkColor, seed))),
+      }))
+      .sort((first, second) => second.distance - first.distance)[0];
+    if (!next || next.distance < 1) return null;
+    seeds.push([...next.color]);
+  }
+
+  let centroids = seeds;
+  let assignments = [];
+  for (let iteration = 0; iteration < 12; iteration += 1) {
+    assignments = entries.map((entry) => {
+      let bestIndex = 0;
+      let bestDistance = Infinity;
+      centroids.forEach((centroid, index) => {
+        const distance = colorVectorDistance(entry.inkColor, centroid);
+        if (distance >= bestDistance) return;
+        bestIndex = index;
+        bestDistance = distance;
+      });
+      return bestIndex;
+    });
+    const nextCentroids = centroids.map((centroid, index) => {
+      const colors = entries
+        .filter((_, entryIndex) => assignments[entryIndex] === index)
+        .map((entry) => entry.inkColor);
+      return colors.length ? meanColor(colors) : centroid;
+    });
+    const movement = nextCentroids.reduce(
+      (sum, centroid, index) => sum + colorVectorDistance(centroid, centroids[index]),
+      0,
+    );
+    centroids = nextCentroids;
+    if (movement < 0.1) break;
+  }
+
+  const clusters = centroids.map((centroid, clusterIndex) => ({
+    centroid,
+    entries: entries.filter((_, entryIndex) => assignments[entryIndex] === clusterIndex),
+  }));
+  if (clusters.some((cluster) => !cluster.entries.length)) return null;
+
+  const maximumWithin = Math.max(
+    ...clusters.flatMap((cluster) =>
+      cluster.entries.map((entry) => colorVectorDistance(entry.inkColor, cluster.centroid)),
+    ),
+  );
+  let minimumBetween = Infinity;
+  for (let first = 0; first < centroids.length; first += 1) {
+    for (let second = first + 1; second < centroids.length; second += 1) {
+      minimumBetween = Math.min(
+        minimumBetween,
+        colorVectorDistance(centroids[first], centroids[second]),
+      );
+    }
+  }
+  if (minimumBetween < Math.max(18, maximumWithin * 2.2)) return null;
+
+  return clusters;
+}
+
+function permutations(values) {
+  if (values.length <= 1) return [values];
+  return values.flatMap((value, index) =>
+    permutations(values.filter((_, otherIndex) => otherIndex !== index)).map((tail) => [
+      value,
+      ...tail,
+    ]),
+  );
+}
+
+function calibrateSuitsFromScreenshotColors(slots) {
+  const clusters = anonymousColorClusters(slots);
+  if (!clusters) return false;
+
+  const mappings = permutations(SUITS)
+    .map((suits) => ({
+      suits,
+      score: clusters.reduce(
+        (total, cluster, clusterIndex) =>
+          total +
+          cluster.entries.reduce(
+            (sum, slot) => sum + (slot.suitScores?.[suits[clusterIndex]] ?? 0),
+            0,
+          ),
+        0,
+      ),
+    }))
+    .sort((first, second) => second.score - first.score);
+  const mappingMargin = mappings[0]?.score - (mappings[1]?.score ?? 0);
+  if (!mappings[0] || mappingMargin < 0.05) return false;
+
+  let changed = false;
+  clusters.forEach((cluster, clusterIndex) => {
+    const suit = mappings[0].suits[clusterIndex];
+    const clusterConfidence =
+      cluster.entries.reduce((sum, slot) => sum + (slot.suitScores?.[suit] ?? 0), 0) /
+      cluster.entries.length;
+    cluster.entries.forEach((slot) => {
+      if (slot.suit !== suit) changed = true;
+      slot.suit = suit;
+      // Once four compact anonymous color groups agree on a unique one-to-one
+      // shape mapping, the screenshot supplies repeated evidence for every
+      // member of that group. Keep the raw silhouette score for diagnostics,
+      // but calibrate the combined evidence above the manual-review floor.
+      slot.suitConfidence = Math.max(
+        slot.suitScores?.[suit] ?? 0,
+        clusterConfidence,
+        0.62,
+      );
+      slot.confidence = Math.min(slot.rankConfidence ?? slot.confidence, slot.suitConfidence);
+      slot.cardId = slot.rank ? `${slot.rank}${suit}` : null;
+      slot.alternatives = (slot.alternatives ?? []).map((alternative) => ({
+        ...alternative,
+        cardId: alternative.rank ? `${alternative.rank}${suit}` : null,
+        suit,
+        confidence: Math.min(slot.suitConfidence, alternative.confidence),
+      }));
+    });
+  });
+  return changed;
 }
 
 function cardRank(cardId) {
@@ -706,18 +1140,49 @@ function bestSuitAssignment(slots) {
   return best;
 }
 
+function clearIndistinguishableConflictGroups(slots) {
+  const groups = new Map();
+  slots.forEach((slot) => {
+    if (!slot.cardId) return;
+    groups.set(slot.cardId, [...(groups.get(slot.cardId) ?? []), slot]);
+  });
+
+  let changed = false;
+  groups.forEach((group) => {
+    if (group.length < 3) return;
+    const profiles = group.map((slot) =>
+      rankedSlotCandidates(slot)
+        .slice(0, 6)
+        .map((candidate) => `${candidate.cardId}:${candidate.confidence.toFixed(2)}`)
+        .join("|"),
+    );
+    if (!profiles.every((profile) => profile === profiles[0])) return;
+
+    // Three or more pixel-identical "cards" are usually a repeated UI patch
+    // (the Finish button caused this exact failure), not independent card
+    // evidence. Do not manufacture a legal-looking set from identical
+    // alternatives; leave the slots unknown and require review.
+    group.forEach((slot) => {
+      clearRecognizedSlot(slot);
+      slot.alternatives = [];
+    });
+    changed = true;
+  });
+  return changed;
+}
+
 function resolveDeckConflicts(slots) {
   const recognizedCards = slots.map((slot) => slot.cardId).filter(Boolean);
   const needsResolution = recognizedCards.length !== slots.length || new Set(recognizedCards).size !== recognizedCards.length;
   if (!needsResolution) return false;
 
+  let changed = clearIndistinguishableConflictGroups(slots);
   const slotsBySuit = new Map();
   slots.forEach((slot) => {
-    if (!slot.suit) return;
+    if (!slot.suit || (!slot.cardId && !slot.alternatives?.length)) return;
     slotsBySuit.set(slot.suit, [...(slotsBySuit.get(slot.suit) ?? []), slot]);
   });
 
-  let changed = false;
   slotsBySuit.forEach((suitSlots) => {
     const assignment = bestSuitAssignment(suitSlots);
     if (!assignment) return;
@@ -786,11 +1251,10 @@ function enforceDeckConstraints(slots) {
 
 function isCardColor(color) {
   const max = Math.max(...color);
-  const min = Math.min(...color);
-  if (max < 95 || max - min < 18) return false;
-
-  const reference = SUIT_REFERENCES[nearestSuit(color)];
-  return colorDistance(color, reference) < CARD_COLOR_DISTANCE_LIMIT;
+  // Card borders, ranks, and suits remain chromatic across Puzzmo themes.
+  // Geometry detection only needs to know that a pixel is colored; it must
+  // never attach a fixed semantic suit to that color.
+  return max >= 55 && colorChroma(color) >= 12;
 }
 
 function cardColorComponents(imageData) {
@@ -1096,26 +1560,80 @@ function detectSlotRects(imageData) {
   return { grid, discard };
 }
 
-function slotRects(imageData) {
-  return detectSlotRects(imageData) ?? fallbackSlotRects(imageData.width, imageData.height);
+function discardRowRecognitionScore(slots) {
+  const recognizedCards = slots.map((slot) => slot.cardId).filter(Boolean);
+  const uniqueCards = new Set(recognizedCards);
+  const confidence = slots.reduce((sum, slot) => sum + slot.confidence, 0);
+  const duplicateCount = recognizedCards.length - uniqueCards.size;
+
+  // A real tray can repeat a rank or suit, but never the exact same card.
+  // Reward four distinct, visually supported reads so a solid-color control
+  // cannot masquerade as four identical cards and then be "repaired" by the
+  // deck constraint solver.
+  return (
+    confidence +
+    uniqueCards.size * 0.1 +
+    (recognizedCards.length === 4 ? 0.2 : 0) -
+    duplicateCount * 0.35
+  );
 }
 
-function brightPixelMask(imageData, rect) {
-  const points = [];
-  for (let y = rect.top; y < rect.bottom; y += 1) {
-    for (let x = rect.left; x < rect.right; x += 1) {
-      const [red, green, blue] = pixelAt(imageData, x, y);
-      if (red > 165 && green > 165 && blue > 165) points.push([x - rect.left, y - rect.top]);
-    }
+function refineDiscardRects(imageData, discardRects) {
+  if (discardRects.length !== 4) return discardRects;
+
+  const nominalHeight = median(discardRects.map(rectHeight));
+  if (!nominalHeight) return discardRects;
+
+  const nominalSlots = discardRects.map((rect) => recognizeSlot(imageData, rect, "discard"));
+  const nominalCards = nominalSlots.map((slot) => slot.cardId).filter(Boolean);
+  const nominalScore = discardRowRecognitionScore(nominalSlots);
+  if (
+    nominalCards.length === 4 &&
+    new Set(nominalCards).size === 4 &&
+    nominalScore >= 3.7
+  ) {
+    return discardRects;
   }
-  return points;
+
+  const step = Math.max(2, Math.round(nominalHeight * 0.03));
+  const firstOffset = Math.round(nominalHeight * -0.15);
+  const lastOffset = Math.round(nominalHeight * 0.65);
+  let best = { rects: discardRects, score: nominalScore };
+
+  for (let offset = firstOffset; offset <= lastOffset; offset += step) {
+    const rects = discardRects.map((rect) =>
+      clampRect(
+        {
+          left: rect.left,
+          top: rect.top + offset,
+          right: rect.right,
+          bottom: rect.bottom + offset,
+        },
+        imageData.width,
+        imageData.height,
+      ),
+    );
+    const slots = rects.map((rect) => recognizeSlot(imageData, rect, "discard"));
+    const score = discardRowRecognitionScore(slots);
+    if (score > best.score) best = { rects, score };
+  }
+
+  return best.rects;
+}
+
+function slotRects(imageData) {
+  const rects = detectSlotRects(imageData) ?? fallbackSlotRects(imageData.width, imageData.height);
+  return {
+    ...rects,
+    discard: refineDiscardRects(imageData, rects.discard),
+  };
 }
 
 function medianChannel(values) {
   return median(values.map(Number));
 }
 
-function scoreForegroundMask(imageData, rect) {
+function scoreForegroundMask(imageData, rect, contrastThreshold = SCORE_CONTRAST_THRESHOLDS[0]) {
   const borderSamples = [];
   const inset = Math.max(1, Math.min(6, Math.floor(Math.min(rectWidth(rect), rectHeight(rect)) * 0.08)));
   const xPositions = [rect.left + inset, (rect.left + rect.right) / 2, rect.right - inset - 1].map(Math.round);
@@ -1139,30 +1657,13 @@ function scoreForegroundMask(imageData, rect) {
       const contrast = colorDistance(color, background);
       // Score text is neutral black/white. Excluding saturated pixels keeps the
       // nearby yellow brackets and colorful card borders out of the OCR mask.
-      if (contrast > 900 && Math.max(...color) - Math.min(...color) < 32) {
+      if (contrast > contrastThreshold && Math.max(...color) - Math.min(...color) < 32) {
         points.push([x - rect.left, y - rect.top]);
       }
     }
   }
 
   return points;
-}
-
-function componentBounds(points, width, height) {
-  return connectedComponents(points, width, height)
-    .map((component) => {
-      const xs = component.map(([x]) => x);
-      const ys = component.map(([, y]) => y);
-      return {
-        left: Math.min(...xs),
-        top: Math.min(...ys),
-        right: Math.max(...xs) + 1,
-        bottom: Math.max(...ys) + 1,
-        size: component.length,
-      };
-    })
-    .filter((box) => box.size > 4 && box.bottom - box.top > 5)
-    .sort((a, b) => a.left - b.left);
 }
 
 function textComponentBoxes(points, width, height) {
@@ -1218,23 +1719,6 @@ function textComponentBoxes(points, width, height) {
   }
 
   return components.sort((a, b) => a.left - b.left);
-}
-
-function readSimpleDigitsFromBounds(bounds) {
-  const digits = [];
-  for (const box of bounds) {
-    const width = box.right - box.left;
-    const height = box.bottom - box.top;
-    if (height < 8) continue;
-    if (width <= 4 && height >= 10) {
-      digits.push("1");
-      continue;
-    }
-    if (width >= 8 && height >= 10) {
-      digits.push("0");
-    }
-  }
-  return digits.join("");
 }
 
 function scoreDigitFeatures(box) {
@@ -1350,8 +1834,8 @@ function classifyScoreDigit(features) {
     bottom > 0,
     upperLeft > upperRight * 0.55,
     upperRight > upperLeft * 0.55,
-    lowerLeft > lowerRight * 0.55,
-    lowerRight > lowerLeft * 0.55,
+    lowerLeft > lowerRight * 0.72,
+    lowerRight > lowerLeft * 0.72,
   ].map(Boolean);
   const best = Object.entries(expected)
     .map(([digit, pattern]) => ({
@@ -1397,6 +1881,39 @@ function groupTextBoxesByRow(boxes) {
   return rows;
 }
 
+function stripAttachedComma(box, expectedHeight) {
+  const width = box.right - box.left;
+  const height = box.bottom - box.top;
+  if (!box.points?.length || height <= expectedHeight + 1) return null;
+
+  const cutoffY = Math.max(1, expectedHeight - 2);
+  const cutoffX = Math.max(1, Math.ceil(width * 0.45));
+  const points = box.points.filter(([x, y]) => !(x < cutoffX && y >= cutoffY));
+  if (points.length < box.points.length * 0.55) return null;
+
+  const minX = Math.min(...points.map(([x]) => x));
+  const maxX = Math.max(...points.map(([x]) => x));
+  const minY = Math.min(...points.map(([, y]) => y));
+  const maxY = Math.max(...points.map(([, y]) => y));
+  return {
+    left: 0,
+    top: 0,
+    right: maxX - minX + 1,
+    bottom: maxY - minY + 1,
+    size: points.length,
+    points: points.map(([x, y]) => [x - minX, y - minY]),
+  };
+}
+
+function classifyScoreGlyphInRow(box, expectedHeight) {
+  const withoutComma = stripAttachedComma(box, expectedHeight);
+  if (withoutComma) {
+    const structuralDigit = classifyScoreDigit(scoreDigitFeatures(withoutComma));
+    if (structuralDigit) return structuralDigit;
+  }
+  return classifyScoreGlyph(box);
+}
+
 function readScoreTotalFromBoxes(boxes) {
   const tallest = Math.max(0, ...boxes.map((box) => box.bottom - box.top));
   const digitBoxes = boxes.filter(
@@ -1407,12 +1924,13 @@ function readScoreTotalFromBoxes(boxes) {
   const rows = groupTextBoxesByRow(digitBoxes);
   const candidates = rows
     .map((row) => {
-      const glyphs = row.boxes
+      const numericBoxes = row.boxes
         .sort((a, b) => a.left - b.left)
-        // The first tall glyph is the dollar sign. The decimal/comma separator
-        // is filtered above because it is much shorter than the digits.
-        .slice(1)
-        .map(classifyScoreGlyph);
+        // The first tall glyph is the dollar sign. A detached comma is filtered
+        // above because it is much shorter than the digits.
+        .slice(1);
+      const expectedHeight = median(numericBoxes.map((box) => box.bottom - box.top));
+      const glyphs = numericBoxes.map((box) => classifyScoreGlyphInRow(box, expectedHeight));
       const rowDigits = glyphs.every(Boolean) ? glyphs.join("") : "";
       return {
         centerY: row.centerY,
@@ -1425,6 +1943,36 @@ function readScoreTotalFromBoxes(boxes) {
   return candidates[0]?.value ?? null;
 }
 
+function readHandCountFromBoxes(boxes) {
+  const rows = groupTextBoxesByRow(boxes)
+    .map((row) => ({
+      centerY: row.centerY,
+      boxes: row.boxes
+        .filter((box) => box.bottom - box.top >= 8)
+        .sort((a, b) => a.left - b.left),
+    }))
+    .sort((a, b) => a.centerY - b.centerY);
+
+  for (const row of rows) {
+    if (row.boxes.length < 2) continue;
+    const firstTwo = row.boxes.slice(0, 2).map(classifyScoreGlyph);
+    if (firstTwo.join("") === "10") return 10;
+  }
+
+  return null;
+}
+
+function consensusValue(values, minimumVotes = 1) {
+  const counts = new Map();
+  values.filter((value) => value !== null).forEach((value) => {
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  });
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const best = ranked[0];
+  if (!best || best[1] < minimumVotes || ranked[1]?.[1] === best[1]) return null;
+  return best[0];
+}
+
 function displayedScoreRects(imageData, rects) {
   if (rects?.grid?.length >= 16) {
     const gridRight = Math.max(...rects.grid.map((rect) => rect.right));
@@ -1435,9 +1983,9 @@ function displayedScoreRects(imageData, rects) {
       hand: clampRect(
         {
           left: gridRight - cardWidth * 1.25,
-          top: gridTop - cardHeight * 0.52,
+          top: gridTop - cardHeight * 0.44,
           right: gridRight + cardWidth * 0.1,
-          bottom: gridTop - cardHeight * 0.3,
+          bottom: gridTop - cardHeight * 0.18,
         },
         imageData.width,
         imageData.height,
@@ -1483,22 +2031,38 @@ function displayedScoreRects(imageData, rects) {
 
 function recognizeDisplayedScore(imageData, rects) {
   const { hand: handRect, total: totalRect } = displayedScoreRects(imageData, rects);
-  const handBounds = componentBounds(
-    brightPixelMask(imageData, handRect),
-    handRect.right - handRect.left,
-    handRect.bottom - handRect.top,
+  const handReads = SCORE_CONTRAST_THRESHOLDS.map((contrastThreshold) =>
+    readHandCountFromBoxes(
+      textComponentBoxes(
+        scoreForegroundMask(imageData, handRect, contrastThreshold),
+        handRect.right - handRect.left,
+        handRect.bottom - handRect.top,
+      ),
+    ),
   );
-  const handDigits = readSimpleDigitsFromBounds(handBounds);
-  const totalBoxes = textComponentBoxes(
-    scoreForegroundMask(imageData, totalRect),
-    totalRect.right - totalRect.left,
-    totalRect.bottom - totalRect.top,
-  );
-  const total = readScoreTotalFromBoxes(totalBoxes);
+  const handCount = consensusValue(handReads, 2);
+  const totalReads = SCORE_CONTRAST_THRESHOLDS.map((contrastThreshold) =>
+    readScoreTotalFromBoxes(
+      textComponentBoxes(
+      scoreForegroundMask(imageData, totalRect, contrastThreshold),
+      totalRect.right - totalRect.left,
+      totalRect.bottom - totalRect.top,
+      ),
+    ),
+  ).map((total) => {
+    if (total === null) return null;
+    return Number.isFinite(handCount)
+      ? isPayoutFeasibleForHandCount(total, handCount)
+        ? total
+        : null
+      : total;
+  });
 
   return {
-    handCount: handDigits === "10" ? 10 : null,
-    total,
+    handCount,
+    // Nested contrast masks are corroborating reads, not independent OCR
+    // engines. Require a unique repeated result; tied values are untrusted.
+    total: consensusValue(totalReads, 2),
   };
 }
 
@@ -1554,6 +2118,30 @@ async function loadImageSource(file) {
   }
 }
 
+export function recognizedScoreMismatch(recognized) {
+  if (!recognized?.displayedScore) return null;
+  const cards = [...(recognized.grid ?? []), ...(recognized.discard ?? [])];
+  if (cards.length !== 20 || cards.some((cardId) => !cardId) || new Set(cards).size !== cards.length) return null;
+
+  const actual = scorePlacement(recognized.grid, recognized.discard);
+  const expected = recognized.displayedScore;
+  const totalIsTrusted =
+    isPayoutFeasibleTotal(expected.total) &&
+    (!Number.isFinite(expected.handCount) ||
+      isPayoutFeasibleForHandCount(expected.total, expected.handCount));
+  const totalMismatch =
+    totalIsTrusted && expected.total !== actual.total;
+  const handCountMismatch = Number.isFinite(expected.handCount) && expected.handCount !== actual.handCount;
+  return totalMismatch || handCountMismatch
+    ? {
+        actual,
+        expected,
+        handCountMismatch,
+        totalMismatch,
+      }
+    : null;
+}
+
 export function recognizeFantasylandImageData(imageData) {
   const rects = slotRects(imageData);
   const gridSlots = Array.from({ length: 16 }, (_, index) =>
@@ -1563,20 +2151,26 @@ export function recognizeFantasylandImageData(imageData) {
     rects.discard[index] ? recognizeSlot(imageData, rects.discard[index], "discard") : emptySlot(),
   );
   const allSlots = [...gridSlots, ...discardSlots];
+  calibrateSuitsFromScreenshotColors(allSlots);
+  const rawRecognizedCards = allSlots.map((slot) => slot.cardId).filter(Boolean);
+  const rawConflicts = new Set(rawRecognizedCards).size !== rawRecognizedCards.length;
   resolveDeckConflicts(allSlots);
   enforceDeckConstraints(allSlots);
   const displayedScore = recognizeDisplayedScore(imageData, rects);
-  const cards = [...gridSlots, ...discardSlots].map((slot) => slot.cardId);
+  const cards = allSlots.map((slot) => slot.cardId);
   const recognizedCards = cards.filter(Boolean);
   const missing = recognizedCards.length !== 20;
   const duplicates = new Set(recognizedCards).size !== recognizedCards.length;
-  const confidence = Math.min(...[...gridSlots, ...discardSlots].map((slot) => slot.confidence));
+  const confidence = Math.min(...allSlots.map((slot) => slot.confidence));
+  const unresolvedLowConfidence = allSlots.some((slot) => slot.confidence < 0.6);
   let warning = "";
   if (missing) {
     warning = `${recognizedCards.length}/20 cards auto-detected from the screenshot. Please adjust the rest manually.`;
   } else if (duplicates) {
     warning = "I read 20 cards from the screenshot, but some were duplicates. Please adjust them manually.";
-  } else if (confidence < 0.6) {
+  } else if (rawConflicts) {
+    warning = "Some card reads conflicted before deck validation. Please double-check the adjusted cards.";
+  } else if (unresolvedLowConfidence) {
     warning = "I read 20 cards from the screenshot, but one or more were low confidence. Please double-check them.";
   }
 
@@ -1612,6 +2206,7 @@ export async function recognizeFantasylandScreenshot(file) {
 export const __recognizerTestHooks = {
   classifyRank,
   classifyScoreDigit,
+  consensusValue,
   displayedScoreTotalFromDigits,
   displayedScoreRects,
   resolveDeckConflicts,

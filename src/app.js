@@ -22,7 +22,10 @@ import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=s
 import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-1";
 import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
-import { recognizeFantasylandScreenshot } from "./screenshotRecognizer.js?v=screenshot-recognizer-19";
+import {
+  recognizeFantasylandScreenshot,
+  recognizedScoreMismatch,
+} from "./screenshotRecognizer.js?v=screenshot-recognizer-24";
 import {
   formatScoringWayCount,
   formatWayCount,
@@ -51,6 +54,7 @@ let optimizerTimerStartedAt = 0;
 let optimizerTimerBudget = 0;
 let optimizerTimerPhase = "Working";
 let attemptPreviewUrl = null;
+let attemptScreenshotExpectedScore = null;
 let selectedSource = "manual";
 
 const deckGrid = document.querySelector("#deckGrid");
@@ -180,7 +184,10 @@ function selectAttemptCardsAsDeal() {
 }
 
 function canOptimizeCurrentInputs() {
-  return selected.size === 20 || attemptValidation().valid;
+  return (
+    (selected.size === 20 || attemptValidation().valid) &&
+    !currentScreenshotScoreMismatch()
+  );
 }
 
 function selectFilledAttemptCardsAsDeal() {
@@ -268,22 +275,26 @@ function renderAttemptEditor() {
 }
 
 function screenshotScoreMismatch(recognized) {
-  // The score text is optional OCR, while the card recognizer has a dedicated
-  // per-card confidence model and deck validation. A complete card read must
-  // never be rejected because a decorative payout label was mistaken for a
-  // displayed total (for example, "$8,222"). Only use score OCR as a hint
-  // when the card read itself already needs manual review.
-  if (!recognized?.displayedScore || recognized.complete) return null;
-  const score = scorePlacement(recognized.grid, recognized.discard);
-  const expected = recognized.displayedScore;
+  const mismatch = recognizedScoreMismatch(recognized);
+  if (!mismatch) return null;
+  const { actual, expected } = mismatch;
   const mismatches = [];
-  if (Number.isFinite(expected.total) && expected.total !== score.total) {
-    mismatches.push(`expected ${money(expected.total)}, got ${money(score.total)}`);
+  if (mismatch.totalMismatch) {
+    mismatches.push(`expected ${money(expected.total)}, got ${money(actual.total)}`);
   }
-  if (Number.isFinite(expected.handCount) && expected.handCount !== score.handCount) {
-    mismatches.push(`expected ${expected.handCount} hands, got ${score.handCount}`);
+  if (mismatch.handCountMismatch) {
+    mismatches.push(`expected ${expected.handCount} hands, got ${actual.handCount}`);
   }
   return mismatches.length ? mismatches.join("; ") : null;
+}
+
+function currentScreenshotScoreMismatch() {
+  if (!attemptScreenshotExpectedScore) return null;
+  return screenshotScoreMismatch({
+    grid: [...attemptGridCards],
+    discard: [...attemptDiscardCards],
+    displayedScore: attemptScreenshotExpectedScore,
+  });
 }
 
 function renderAttemptSummary() {
@@ -316,6 +327,14 @@ function renderAttemptSummary() {
   }
 
   attemptScoreBadge.textContent = money(validation.score.total);
+  const screenshotMismatch = currentScreenshotScoreMismatch();
+  if (screenshotMismatch) {
+    optimizeButton.disabled = true;
+    attemptSummary.textContent = `Detected cards do not match the screenshot score (${screenshotMismatch}). Please adjust them.`;
+    attemptSummary.classList.add("is-warning");
+    return;
+  }
+
   const baseText = `${money(validation.score.total)} · ${validation.score.handCount} hands · ${validation.score.qualityHandCount} quality`;
   if (selected.size === 20 && !validation.matchesSelectedDeal) {
     attemptSummary.textContent = `${baseText}. Optimize will use this grid attempt and update the selected deal.`;
@@ -373,6 +392,7 @@ function handleAttemptSlotChange(event) {
 }
 
 async function handleAttemptScreenshotChange() {
+  attemptScreenshotExpectedScore = null;
   if (attemptPreviewUrl) {
     URL.revokeObjectURL(attemptPreviewUrl);
     attemptPreviewUrl = null;
@@ -395,6 +415,11 @@ async function handleAttemptScreenshotChange() {
 
   try {
     const recognized = await recognizeFantasylandScreenshot(file);
+    const displayedScore = recognized.displayedScore ?? {};
+    attemptScreenshotExpectedScore =
+      Number.isFinite(displayedScore.total) || Number.isFinite(displayedScore.handCount)
+        ? { ...displayedScore }
+        : null;
     setAttemptCards(recognized.grid, recognized.discard);
     const validation = attemptValidation();
     if (!validation.hasDuplicates) selectFilledAttemptCardsAsDeal();
@@ -402,18 +427,19 @@ async function handleAttemptScreenshotChange() {
     if (selectedSource === "attempt" && selected.size > 0) {
       manualPickerDetails.open = false;
     }
-    const mismatch = screenshotScoreMismatch(recognized);
+    const mismatch = currentScreenshotScoreMismatch();
     if (mismatch) {
       attemptSummary.textContent = `Detected cards do not match the screenshot score (${mismatch}). Please adjust them.`;
       attemptSummary.classList.add("is-warning");
       return;
     }
+    if (recognized.warning) {
+      attemptSummary.textContent = recognized.warning;
+      attemptSummary.classList.add("is-warning");
+      return;
+    }
     if (!validation.valid) {
       renderAttemptSummary();
-      if (recognized.warning) {
-        attemptSummary.textContent = recognized.warning;
-        attemptSummary.classList.add("is-warning");
-      }
       return;
     }
     activeSolutionIndex = 0;
@@ -435,6 +461,7 @@ function clearAttempt() {
     attemptPreviewUrl = null;
   }
   attemptScreenshot.value = "";
+  attemptScreenshotExpectedScore = null;
   attemptPreview.hidden = true;
   attemptPreview.removeAttribute("src");
   selectedSource = "manual";
@@ -444,7 +471,7 @@ function clearAttempt() {
 
 async function optimizeAttemptCards() {
   const validation = attemptValidation();
-  if (!validation.valid) return;
+  if (!validation.valid || currentScreenshotScoreMismatch()) return;
   selectAttemptCardsAsDeal();
   activeSolutionIndex = 0;
   resetOptimizerTimer();
@@ -454,6 +481,7 @@ async function optimizeAttemptCards() {
 }
 
 async function optimizeCurrentInputs() {
+  if (currentScreenshotScoreMismatch()) return;
   if (attemptValidation().valid) {
     await optimizeAttemptCards();
     return;

@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 
-import { __recognizerTestHooks } from "../src/screenshotRecognizer.js";
+import {
+  __recognizerTestHooks,
+  recognizedScoreMismatch,
+} from "../src/screenshotRecognizer.js";
 
-const { classifyRank, classifyScoreDigit, displayedScoreRects, displayedScoreTotalFromDigits, resolveDeckConflicts } =
-  __recognizerTestHooks;
+const {
+  classifyRank,
+  classifyScoreDigit,
+  consensusValue,
+  displayedScoreRects,
+  displayedScoreTotalFromDigits,
+  resolveDeckConflicts,
+} = __recognizerTestHooks;
 
 const rankShapes = {
   "6": {
@@ -224,6 +233,47 @@ assert.equal(displayedScoreTotalFromDigits("8222"), null);
 assert.equal(displayedScoreTotalFromDigits("822272222"), null);
 assert.equal(displayedScoreTotalFromDigits("10"), null);
 assert.equal(displayedScoreTotalFromDigits("99999"), null);
+assert.equal(consensusValue([null, 1070, 1070, 14370, 14370], 2), null);
+assert.equal(consensusValue([null, 14370, 14370, 14370, 1070], 2), 14370);
+
+const mismatchGrid = [
+  "8S", "6H", "7C", "9H",
+  "7H", "AD", "7D", "9D",
+  "9S", "QH", "8C", "9C",
+  "10D", "QS", "KH", "JH",
+];
+const mismatchDiscard = ["6S", "10S", "AS", "KS"];
+const completeButWrongRead = {
+  complete: true,
+  grid: mismatchGrid,
+  discard: mismatchDiscard,
+  displayedScore: { handCount: 10, total: 14370 },
+};
+const scoreMismatch = recognizedScoreMismatch(completeButWrongRead);
+assert.equal(scoreMismatch.actual.total, 7710);
+assert.equal(scoreMismatch.totalMismatch, true);
+assert.equal(scoreMismatch.handCountMismatch, false);
+assert.equal(
+  recognizedScoreMismatch({
+    ...completeButWrongRead,
+    displayedScore: { handCount: null, total: 8222 },
+  }),
+  null,
+);
+assert.equal(
+  recognizedScoreMismatch({
+    ...completeButWrongRead,
+    displayedScore: { handCount: 10, total: 1070 },
+  }),
+  null,
+);
+assert.equal(
+  recognizedScoreMismatch({
+    ...completeButWrongRead,
+    discard: ["KC", "QC", "AC", "JC"],
+  }),
+  null,
+);
 
 const conflictingSpades = [
   {
@@ -246,6 +296,26 @@ assert.deepEqual(
   conflictingSpades.map((slot) => slot.cardId),
   ["AS", "QS"],
   "deck-aware assignment should repair a duplicate using the strongest valid alternatives",
+);
+
+const repeatedUiPatch = Array.from({ length: 4 }, () => ({
+  cardId: "9S",
+  rank: "9",
+  suit: "S",
+  confidence: 0.67,
+  alternatives: [
+    { cardId: "8S", rank: "8", suit: "S", confidence: 0.67 },
+    { cardId: "6S", rank: "6", suit: "S", confidence: 0.64 },
+    { cardId: "10S", rank: "10", suit: "S", confidence: 0.61 },
+    { cardId: "AS", rank: "A", suit: "S", confidence: 0.59 },
+    { cardId: "KS", rank: "K", suit: "S", confidence: 0.57 },
+  ],
+}));
+assert.equal(resolveDeckConflicts(repeatedUiPatch), true);
+assert.deepEqual(
+  repeatedUiPatch.map((slot) => slot.cardId),
+  [null, null, null, null],
+  "identical UI patches must not be converted into four invented cards",
 );
 
 function scaledGridRects(scale) {

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const css = readFileSync(`${root}/styles.css`, "utf8");
 const html = readFileSync(`${root}/index.html`, "utf8");
+const app = readFileSync(`${root}/src/app.js`, "utf8");
 
 function ruleBody(selectorPattern) {
   const matches = [...css.matchAll(new RegExp(`${selectorPattern}\\s*\\{([^}]*)\\}`, "gs"))];
@@ -82,5 +83,41 @@ const horizontalLabels = ruleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
 
 assert.match(html, /styles\.css\?v=design-system-46/);
+assert.match(html, /src\/app\.js\?v=solver-cache-39/);
+assert.match(app, /screenshotRecognizer\.js\?v=screenshot-recognizer-24/);
+
+const screenshotHandler = app.match(
+  /async function handleAttemptScreenshotChange\(\) \{([\s\S]*?)\n\}\n\nfunction clearAttempt/,
+)?.[1];
+assert.ok(screenshotHandler, "Expected screenshot upload handler");
+assert.ok(
+  screenshotHandler.indexOf("if (recognized.warning)") <
+    screenshotHandler.indexOf("if (!validation.valid)"),
+  "Recognition warnings must be surfaced even when 20 unique cards form a structurally valid attempt",
+);
+const mismatchGuard = app.match(
+  /function screenshotScoreMismatch\(recognized\) \{([\s\S]*?)\n\}\n\nfunction renderAttemptSummary/,
+)?.[1];
+assert.ok(mismatchGuard, "Expected screenshot score mismatch guard");
+assert.doesNotMatch(
+  mismatchGuard,
+  /recognized\.complete/,
+  "A complete card read must still be checked against a trusted screenshot score",
+);
+assert.match(
+  app,
+  /let attemptScreenshotExpectedScore = null;/,
+  "Trusted screenshot score should persist while the user corrects cards",
+);
+assert.match(
+  app,
+  /function currentScreenshotScoreMismatch\(\)[\s\S]*attemptScreenshotExpectedScore[\s\S]*attemptGridCards[\s\S]*attemptDiscardCards/,
+  "Screenshot score mismatch should be recomputed from the current manual edits",
+);
+assert.match(
+  app,
+  /function canOptimizeCurrentInputs\(\)[\s\S]*!currentScreenshotScoreMismatch\(\)/,
+  "Optimize should stay disabled while the attempt still conflicts with the screenshot score",
+);
 
 console.log("UI contract tests passed.");
