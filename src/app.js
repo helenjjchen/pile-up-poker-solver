@@ -19,24 +19,35 @@ import {
   serializeBestKnownRecord,
 } from "./bestKnownCache.js?v=best-known-cache-1";
 import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=solver-equivalence-3";
-import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-1";
+import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-3";
 import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
 import {
   recognizeFantasylandScreenshot,
   recognizedScoreMismatch,
-} from "./screenshotRecognizer.js?v=screenshot-recognizer-24";
+} from "./screenshotRecognizer.js?v=screenshot-recognizer-31";
+import {
+  attemptCardKey,
+  reportNoEditReviewConfirmation,
+} from "./recognizerFeedback.js?v=recognizer-feedback-1";
 import {
   formatScoringWayCount,
   formatWayCount,
+  groupSolutionsByOutcome,
   scoringHandSummary,
-  solutionHandProfileKey,
-  solutionOutcomeKey,
-} from "./solutionProfiles.js?v=solution-profiles-1";
+} from "./solutionProfiles.js?v=solution-profiles-2";
+import {
+  pinnedSolutionPortfolio,
+  solutionPlacementKey,
+} from "./solutionPortfolio.js?v=solution-portfolio-1";
 
 const selected = new Set();
 const attemptGridCards = Array(16).fill("");
 const attemptDiscardCards = Array(4).fill("");
+const attemptReview = {
+  grid: Array(16).fill(false),
+  discard: Array(4).fill(false),
+};
 let latestResult = null;
 let activeSolutionIndex = 0;
 let seededBestKnown = new Map();
@@ -56,6 +67,12 @@ let optimizerTimerPhase = "Working";
 let attemptPreviewUrl = null;
 let attemptScreenshotExpectedScore = null;
 let selectedSource = "manual";
+let recognitionRequestId = 0;
+let recognitionInProgress = false;
+let optimizerRunning = false;
+let attemptImportedCardKey = null;
+let attemptWasEdited = false;
+const searchHistoryByDeal = new Map();
 
 const deckGrid = document.querySelector("#deckGrid");
 const selectedCount = document.querySelector("#selectedCount");
@@ -72,6 +89,8 @@ const attemptGridSlots = document.querySelector("#attemptGridSlots");
 const attemptDiscardSlots = document.querySelector("#attemptDiscardSlots");
 const attemptSummary = document.querySelector("#attemptSummary");
 const clearAttemptButton = document.querySelector("#clearAttemptButton");
+const confirmAttemptReviewButton = document.querySelector("#confirmAttemptReviewButton");
+const gridAttemptDetails = document.querySelector("#gridAttemptDetails");
 const manualPickerDetails = document.querySelector("#manualPickerDetails");
 const manualPickerHint = document.querySelector("#manualPickerHint");
 const topScore = document.querySelector("#topScore");
@@ -130,6 +149,43 @@ function attemptCards() {
   return [...attemptGridCards, ...attemptDiscardCards].filter(Boolean);
 }
 
+function resetAttemptReview() {
+  attemptReview.grid.fill(false);
+  attemptReview.discard.fill(false);
+}
+
+function setAttemptReview(review = {}) {
+  resetAttemptReview();
+  (review.grid ?? []).forEach((needsReview, index) => {
+    if (index < attemptReview.grid.length) attemptReview.grid[index] = Boolean(needsReview);
+  });
+  (review.discard ?? []).forEach((needsReview, index) => {
+    if (index < attemptReview.discard.length) attemptReview.discard[index] = Boolean(needsReview);
+  });
+}
+
+function attemptReviewCount() {
+  return [...attemptReview.grid, ...attemptReview.discard].filter(Boolean).length;
+}
+
+function flagLowestConfidenceSlots(confidenceBySlot, count = 3) {
+  const ranked = [
+    ...(confidenceBySlot?.grid ?? []).map((confidence, index) => ({
+      zone: "grid",
+      index,
+      confidence,
+    })),
+    ...(confidenceBySlot?.discard ?? []).map((confidence, index) => ({
+      zone: "discard",
+      index,
+      confidence,
+    })),
+  ].sort((first, second) => first.confidence - second.confidence);
+  ranked.slice(0, count).forEach(({ zone, index }) => {
+    attemptReview[zone][index] = true;
+  });
+}
+
 function attemptValidation() {
   const cards = attemptCards();
   const filledSlots = cards.length;
@@ -183,11 +239,15 @@ function selectAttemptCardsAsDeal() {
   return true;
 }
 
+function attemptIsActiveInput(validation = attemptValidation()) {
+  return validation.valid && (selectedSource === "attempt" || selected.size !== 20);
+}
+
 function canOptimizeCurrentInputs() {
-  return (
-    (selected.size === 20 || attemptValidation().valid) &&
-    !currentScreenshotScoreMismatch()
-  );
+  if (recognitionInProgress || optimizerRunning) return false;
+  const validation = attemptValidation();
+  if (attemptIsActiveInput(validation)) return true;
+  return selected.size === 20;
 }
 
 function selectFilledAttemptCardsAsDeal() {
@@ -253,11 +313,16 @@ function renderAttemptSelect(zone, index, currentCardId) {
     '<option value="">--</option>',
     ...attemptOptionGroups().map((group) => renderAttemptOptionGroup(group, currentCardId, usedCards)),
   ].join("");
+  const needsReview = attemptReview[zone][index];
+  const disabledAttribute = optimizerRunning || recognitionInProgress ? " disabled" : "";
+  const reviewAttributes = needsReview
+    ? ' aria-invalid="true" aria-describedby="attemptSummary"'
+    : "";
 
   return `
-    <label class="attempt-slot">
-      <span>${label}</span>
-      <select class="${suitClass}" data-attempt-zone="${zone}" data-attempt-index="${index}" aria-label="${zone} card ${index + 1}">
+    <label class="attempt-slot${needsReview ? " is-review" : ""}">
+      <span>${label}${needsReview ? "<em>Review</em>" : ""}</span>
+      <select class="${suitClass}" data-attempt-zone="${zone}" data-attempt-index="${index}" aria-label="${zone} card ${index + 1}"${reviewAttributes}${disabledAttribute}>
         ${options}
       </select>
     </label>
@@ -288,7 +353,7 @@ function screenshotScoreMismatch(recognized) {
   return mismatches.length ? mismatches.join("; ") : null;
 }
 
-function currentScreenshotScoreMismatch() {
+function attemptScreenshotScoreMismatch() {
   if (!attemptScreenshotExpectedScore) return null;
   return screenshotScoreMismatch({
     grid: [...attemptGridCards],
@@ -297,9 +362,16 @@ function currentScreenshotScoreMismatch() {
   });
 }
 
+function currentScreenshotScoreMismatch() {
+  return attemptIsActiveInput() ? attemptScreenshotScoreMismatch() : null;
+}
+
 function renderAttemptSummary() {
   const validation = attemptValidation();
+  const reviewCount = attemptReviewCount();
   attemptSummary.classList.remove("is-good", "is-warning");
+  confirmAttemptReviewButton.classList.toggle("is-hidden", reviewCount === 0);
+  confirmAttemptReviewButton.disabled = optimizerRunning || recognitionInProgress;
   optimizeButton.disabled = !canOptimizeCurrentInputs();
 
   if (validation.filledSlots === 0) {
@@ -327,15 +399,25 @@ function renderAttemptSummary() {
   }
 
   attemptScoreBadge.textContent = money(validation.score.total);
-  const screenshotMismatch = currentScreenshotScoreMismatch();
+  const screenshotMismatch = attemptScreenshotScoreMismatch();
   if (screenshotMismatch) {
-    optimizeButton.disabled = true;
-    attemptSummary.textContent = `Detected cards do not match the screenshot score (${screenshotMismatch}). Please adjust them.`;
+    attemptSummary.textContent =
+      `Detected cards do not match the screenshot score (${screenshotMismatch}). ` +
+      (attemptIsActiveInput(validation)
+        ? "This is only a warning; Optimize will use the cards shown above."
+        : "The separately selected manual deal is unaffected.");
     attemptSummary.classList.add("is-warning");
     return;
   }
 
   const baseText = `${money(validation.score.total)} · ${validation.score.handCount} hands · ${validation.score.qualityHandCount} quality`;
+  if (reviewCount > 0) {
+    attemptSummary.textContent =
+      `${baseText}. Review ${reviewCount} highlighted card${reviewCount === 1 ? "" : "s"}. ` +
+      `Choose “Cards Look Right” to clear the highlights, or Optimize anyway.`;
+    attemptSummary.classList.add("is-warning");
+    return;
+  }
   if (selected.size === 20 && !validation.matchesSelectedDeal) {
     attemptSummary.textContent = `${baseText}. Optimize will use this grid attempt and update the selected deal.`;
     return;
@@ -374,13 +456,18 @@ function renderAttemptSummary() {
 }
 
 function handleAttemptSlotChange(event) {
+  if (optimizerRunning || recognitionInProgress) return;
   const select = event.target.closest("select[data-attempt-zone]");
   if (!select) return;
   const index = Number(select.dataset.attemptIndex);
   if (select.dataset.attemptZone === "grid") {
+    if (attemptGridCards[index] !== select.value) attemptWasEdited = true;
     attemptGridCards[index] = select.value;
+    attemptReview.grid[index] = false;
   } else {
+    if (attemptDiscardCards[index] !== select.value) attemptWasEdited = true;
     attemptDiscardCards[index] = select.value;
+    attemptReview.discard[index] = false;
   }
   const validation = attemptValidation();
   if (validation.valid) {
@@ -388,11 +475,23 @@ function handleAttemptSlotChange(event) {
   } else if (selectedSource === "attempt" && !validation.hasDuplicates) {
     selectFilledAttemptCardsAsDeal();
   }
+  latestResult = null;
+  activeSolutionIndex = 0;
   renderSelectionState();
 }
 
 async function handleAttemptScreenshotChange() {
+  if (optimizerRunning) {
+    attemptScreenshot.value = "";
+    return;
+  }
+  const requestId = ++recognitionRequestId;
+  recognitionInProgress = true;
   attemptScreenshotExpectedScore = null;
+  attemptImportedCardKey = null;
+  attemptWasEdited = false;
+  resetAttemptReview();
+  attemptPreview.classList.remove("is-compact");
   if (attemptPreviewUrl) {
     URL.revokeObjectURL(attemptPreviewUrl);
     attemptPreviewUrl = null;
@@ -400,8 +499,10 @@ async function handleAttemptScreenshotChange() {
 
   const file = attemptScreenshot.files?.[0];
   if (!file) {
+    recognitionInProgress = false;
     attemptPreview.hidden = true;
     attemptPreview.removeAttribute("src");
+    gridAttemptDetails.open = true;
     renderAttemptSummary();
     return;
   }
@@ -410,24 +511,38 @@ async function handleAttemptScreenshotChange() {
   attemptPreview.src = attemptPreviewUrl;
   attemptPreview.hidden = false;
   attemptScoreBadge.textContent = "Reading...";
+  optimizeButton.disabled = true;
   attemptSummary.classList.remove("is-good", "is-warning");
   attemptSummary.textContent = "Reading screenshot cards...";
 
   try {
     const recognized = await recognizeFantasylandScreenshot(file);
+    if (requestId !== recognitionRequestId) return;
+    recognitionInProgress = false;
     const displayedScore = recognized.displayedScore ?? {};
     attemptScreenshotExpectedScore =
       Number.isFinite(displayedScore.total) || Number.isFinite(displayedScore.handCount)
         ? { ...displayedScore }
         : null;
     setAttemptCards(recognized.grid, recognized.discard);
+    attemptImportedCardKey = attemptCardKey(
+      attemptGridCards,
+      attemptDiscardCards,
+    );
+    setAttemptReview(recognized.review);
     const validation = attemptValidation();
     if (!validation.hasDuplicates) selectFilledAttemptCardsAsDeal();
-    renderSelectionState();
-    if (selectedSource === "attempt" && selected.size > 0) {
-      manualPickerDetails.open = false;
+    const mismatch = attemptScreenshotScoreMismatch();
+    if (mismatch && attemptReviewCount() === 0) {
+      flagLowestConfidenceSlots(recognized.confidenceBySlot);
     }
-    const mismatch = currentScreenshotScoreMismatch();
+    renderSelectionState();
+    if (selectedSource === "attempt" && selected.size > 0) manualPickerDetails.open = false;
+    gridAttemptDetails.open = Boolean(mismatch || recognized.warning || !validation.valid);
+    attemptPreview.classList.toggle(
+      "is-compact",
+      Boolean(validation.valid && !mismatch && !recognized.warning && attemptReviewCount() === 0),
+    );
     if (mismatch) {
       attemptSummary.textContent = `Detected cards do not match the screenshot score (${mismatch}). Please adjust them.`;
       attemptSummary.classList.add("is-warning");
@@ -447,6 +562,9 @@ async function handleAttemptScreenshotChange() {
     showAttemptPlacement();
     statusLine.textContent = `Loaded grid attempt from screenshot: ${money(validation.score.total)}.`;
   } catch (error) {
+    if (requestId !== recognitionRequestId) return;
+    recognitionInProgress = false;
+    attemptPreview.classList.remove("is-compact");
     renderAttemptEditor();
     attemptSummary.textContent = error instanceof Error ? error.message : "Could not read screenshot cards.";
     attemptSummary.classList.add("is-warning");
@@ -454,6 +572,9 @@ async function handleAttemptScreenshotChange() {
 }
 
 function clearAttempt() {
+  if (optimizerRunning) return;
+  recognitionRequestId += 1;
+  recognitionInProgress = false;
   attemptGridCards.fill("");
   attemptDiscardCards.fill("");
   if (attemptPreviewUrl) {
@@ -462,16 +583,54 @@ function clearAttempt() {
   }
   attemptScreenshot.value = "";
   attemptScreenshotExpectedScore = null;
+  attemptImportedCardKey = null;
+  attemptWasEdited = false;
+  resetAttemptReview();
+  gridAttemptDetails.open = true;
   attemptPreview.hidden = true;
+  attemptPreview.classList.remove("is-compact");
   attemptPreview.removeAttribute("src");
   selectedSource = "manual";
   manualPickerDetails.open = true;
+  if (latestResult?.isAttemptView) {
+    latestResult = null;
+    renderEmptyResult();
+  }
   renderSelectionState();
+}
+
+function confirmAttemptReview() {
+  const reviewCount = attemptReviewCount();
+  if (optimizerRunning || recognitionInProgress || reviewCount === 0) return;
+  const scoreMismatch = currentScreenshotScoreMismatch();
+  const confirmedWithoutEdits =
+    attemptImportedCardKey !== null &&
+    !attemptWasEdited &&
+    attemptImportedCardKey === attemptCardKey(
+      attemptGridCards,
+      attemptDiscardCards,
+    );
+  resetAttemptReview();
+  renderSelectionState();
+  if (confirmedWithoutEdits) {
+    reportNoEditReviewConfirmation({
+      mode: "normal",
+      reviewCount,
+      scoreMismatch,
+    });
+    statusLine.textContent = scoreMismatch
+      ? "Cards confirmed without edits. Marked as an over-sensitive recognizer warning; Optimize will use these cards."
+      : "Cards confirmed without edits. Marked as an over-sensitive recognizer warning.";
+    return;
+  }
+  statusLine.textContent = scoreMismatch
+    ? "Cards confirmed. The screenshot score differs, but Optimize will use these cards."
+    : "Cards confirmed. Ready to optimize.";
 }
 
 async function optimizeAttemptCards() {
   const validation = attemptValidation();
-  if (!validation.valid || currentScreenshotScoreMismatch()) return;
+  if (!validation.valid) return;
   selectAttemptCardsAsDeal();
   activeSolutionIndex = 0;
   resetOptimizerTimer();
@@ -481,8 +640,9 @@ async function optimizeAttemptCards() {
 }
 
 async function optimizeCurrentInputs() {
-  if (currentScreenshotScoreMismatch()) return;
-  if (attemptValidation().valid) {
+  if (recognitionInProgress || optimizerRunning) return;
+  const validation = attemptValidation();
+  if (attemptIsActiveInput(validation)) {
     await optimizeAttemptCards();
     return;
   }
@@ -876,8 +1036,18 @@ function mergeBestKnownIntoResult(result, record) {
   const savedSolution = savedSolutions[0];
   if (!savedSolution) return result;
   const existingSolutions = result.solutions ?? [];
+  const playerAttempt = result.playerAttemptKey
+    ? existingSolutions.find(
+        (solution) =>
+          solutionPlacementKey(solution) === result.playerAttemptKey,
+      )
+    : null;
   const mergedSolutions = uniqueSolutionsByPlacement(
-    [...savedSolutions, ...existingSolutions].sort((a, b) => compareScores(b.score, a.score)),
+    [
+      ...(playerAttempt ? [playerAttempt] : []),
+      ...savedSolutions,
+      ...existingSolutions,
+    ].sort((a, b) => compareScores(b.score, a.score)),
   );
 
   const bestByHandCount = result.bestByHandCount.map((bucket) => {
@@ -917,6 +1087,7 @@ function mergeAttemptIntoResult(result, attemptSolution) {
       incumbentTotal: attemptSolution.score.total,
       searchOrder: "grid attempt lower bound",
       usedAttemptLowerBound: true,
+      playerAttemptKey: solutionPlacementKey(attemptSolution),
     };
   }
 
@@ -946,6 +1117,7 @@ function mergeAttemptIntoResult(result, attemptSolution) {
     bestByHandCount,
     incumbentTotal: Math.max(result.incumbentTotal ?? 0, attemptSolution.score.total),
     usedAttemptLowerBound: compareScores(attemptSolution.score, result.best.score) > 0,
+    playerAttemptKey: solutionPlacementKey(attemptSolution),
   };
 }
 
@@ -1065,7 +1237,7 @@ function getHeuristicWorker() {
   if (heuristicWorker) return heuristicWorker;
 
   try {
-    heuristicWorker = new Worker(new URL("./heuristicSolverWorker.js?v=solver-fast-1", import.meta.url), { type: "module" });
+    heuristicWorker = new Worker(new URL("./heuristicSolverWorker.js?v=solver-fast-3", import.meta.url), { type: "module" });
   } catch {
     heuristicWorkerUnavailable = true;
     heuristicWorker = null;
@@ -1851,7 +2023,13 @@ function renderDeck() {
     button.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
     button.innerHTML = renderMiniCardContent(card.id);
     if (selected.has(card.id)) button.classList.add("is-selected");
-    if (!selected.has(card.id) && selected.size >= 20) button.disabled = true;
+    if (
+      optimizerRunning ||
+      recognitionInProgress ||
+      (!selected.has(card.id) && selected.size >= 20)
+    ) {
+      button.disabled = true;
+    }
     button.addEventListener("click", () => toggleCard(card.id));
     deckGrid.append(button);
   }
@@ -1859,6 +2037,8 @@ function renderDeck() {
 
 function renderSelectionState() {
   const validation = attemptValidation();
+  const activeMismatch = currentScreenshotScoreMismatch();
+  const activeReviewCount = attemptIsActiveInput(validation) ? attemptReviewCount() : 0;
   selectedCount.textContent = `${selected.size}/20`;
   if (selectedSource === "attempt" && selected.size > 0) {
     manualPickerHint.textContent = `${selected.size}/20 auto-selected`;
@@ -1868,8 +2048,19 @@ function renderSelectionState() {
     const remaining = 20 - selected.size;
     manualPickerHint.textContent = `Choose ${remaining} more`;
   }
+  attemptScreenshot.disabled = optimizerRunning;
+  clearAttemptButton.disabled = optimizerRunning;
+  searchDepth.disabled = optimizerRunning;
   optimizeButton.disabled = !canOptimizeCurrentInputs();
-  if (validation.valid && (selected.size !== 20 || !validation.matchesSelectedDeal)) {
+  if (activeMismatch) {
+    statusLine.textContent =
+      activeReviewCount > 0
+        ? "Screenshot score differs. Review the highlighted cards, or Optimize anyway."
+        : "Cards confirmed. The screenshot score differs, but Optimize will use these cards.";
+  } else if (activeReviewCount > 0) {
+    statusLine.textContent =
+      `Review ${activeReviewCount} highlighted card${activeReviewCount === 1 ? "" : "s"}, or Optimize anyway.`;
+  } else if (validation.valid && (selected.size !== 20 || !validation.matchesSelectedDeal)) {
     statusLine.textContent = "Ready to optimize grid attempt.";
   } else if (selected.size === 20) {
     const bestKnown = bestKnownForCurrentDeal();
@@ -1891,6 +2082,7 @@ function renderSelectionState() {
 }
 
 function toggleCard(cardId) {
+  if (optimizerRunning || recognitionInProgress) return;
   latestResult = null;
   activeSolutionIndex = 0;
   resetOptimizerTimer();
@@ -1902,6 +2094,7 @@ function toggleCard(cardId) {
 }
 
 function clearSelection() {
+  if (optimizerRunning || recognitionInProgress) return;
   selected.clear();
   latestResult = null;
   activeSolutionIndex = 0;
@@ -1918,7 +2111,7 @@ function renderEmptyResult() {
   resultTotal.textContent = "$0";
   resultBase.textContent = "$0";
   resultHands.textContent = "0";
-  resultMultiplier.textContent = "x1";
+  resultMultiplier.textContent = "×1";
   resultQuality.textContent = "0";
   runtimeInfo.textContent = "Not run";
   boardGrid.innerHTML = Array.from({ length: 16 }, () => renderPlayingCard(null)).join("");
@@ -1981,55 +2174,41 @@ function activeSolution() {
 }
 
 function groupedSolutions() {
-  const groups = [];
-  const byKey = new Map();
-
-  (latestResult?.solutions ?? []).forEach((solution, index) => {
-    const key = solutionOutcomeKey(solution);
-    let group = byKey.get(key);
-    if (!group) {
-      group = {
-        key,
-        representative: solution,
-        indexes: [],
-        solutions: [],
-        variants: [],
-        variantsByKey: new Map(),
-      };
-      byKey.set(key, group);
-      groups.push(group);
-    }
-
-    const profileKey = solutionHandProfileKey(solution);
-    let variant = group.variantsByKey.get(profileKey);
-    if (!variant) {
-      variant = {
-        key: profileKey,
-        representative: solution,
-        indexes: [],
-        solutions: [],
-      };
-      group.variantsByKey.set(profileKey, variant);
-      group.variants.push(variant);
-    }
-
-    group.indexes.push(index);
-    group.solutions.push(solution);
-    variant.indexes.push(index);
-    variant.solutions.push(solution);
-  });
-
-  return groups;
+  return groupSolutionsByOutcome(latestResult?.solutions ?? []);
 }
 
 function renderSolutionGroups() {
-  const groups = groupedSolutions().slice(0, 12);
+  const allGroups = groupedSolutions();
+  const pinnedGroup = latestResult?.playerAttemptKey
+    ? allGroups.find((group) =>
+        group.solutions.some(
+          (solution) =>
+            solutionPlacementKey(solution) === latestResult.playerAttemptKey,
+        ),
+      )
+    : null;
+  const groups = pinnedSolutionPortfolio(
+    allGroups,
+    pinnedGroup ? [pinnedGroup] : [],
+    {
+      compare: (first, second) =>
+        compareScores(second.representative.score, first.representative.score),
+      keyOf: (group) => group.key,
+      maxSolutions: 12,
+    },
+  );
   solutionsRow.classList.toggle("has-layout-drawer", groups.some((group) => group.variants.length > 1));
   solutionsRow.innerHTML = "";
 
   groups.forEach((group) => {
     const activeInGroup = group.indexes.includes(activeSolutionIndex);
     const activeVariant = group.variants.find((variant) => variant.indexes.includes(activeSolutionIndex));
+    const playerAttemptIndex = group.indexes.find(
+      (index) =>
+        solutionPlacementKey(latestResult.solutions[index]) ===
+        latestResult.playerAttemptKey,
+    );
+    const isPlayerAttemptGroup = playerAttemptIndex !== undefined;
     const wayCount = group.variants.length;
     const wayCountIsExhaustive = (latestResult?.exhaustiveWayOutcomeKeys ?? []).includes(group.key);
     const groupElement = document.createElement("div");
@@ -2042,9 +2221,15 @@ function renderSolutionGroups() {
       wayCount === 1
         ? "Show this scoring way"
         : "Show the first scoring way for this tied outcome.";
-    button.innerHTML = `${money(group.representative.score.total)}<span>${group.representative.score.handCount} hands · ${group.representative.score.qualityHandCount} quality · ${formatWayCount(wayCount, wayCountIsExhaustive)}</span>`;
+    button.innerHTML =
+      `${money(group.representative.score.total)}` +
+      `<span>${group.representative.score.handCount} hands · ` +
+      `${group.representative.score.qualityHandCount} quality · ` +
+      `${formatWayCount(wayCount, wayCountIsExhaustive)}` +
+      `${isPlayerAttemptGroup ? " · Your grid" : ""}</span>`;
     button.addEventListener("click", () => {
-      activeSolutionIndex = activeVariant?.indexes[0] ?? group.indexes[0];
+      activeSolutionIndex =
+        playerAttemptIndex ?? activeVariant?.indexes[0] ?? group.indexes[0];
       renderResult();
     });
     groupElement.append(button);
@@ -2091,14 +2276,19 @@ function renderResult() {
   }
 
   const { score } = solution;
+  const isPlayerAttempt =
+    Boolean(latestResult.playerAttemptKey) &&
+    solutionPlacementKey(solution) === latestResult.playerAttemptKey;
   topScore.textContent = money(score.total);
   resultTotal.textContent = money(score.total);
   resultBase.textContent = money(score.base);
   resultHands.textContent = String(score.handCount);
-  resultMultiplier.textContent = `x${score.multiplier}`;
+  resultMultiplier.textContent = `×${score.multiplier}`;
   resultQuality.textContent = String(score.qualityHandCount);
   runtimeInfo.textContent = latestResult.isAttemptView
     ? "Player attempt from screenshot"
+    : isPlayerAttempt
+      ? "Your uploaded placement"
     : latestResult.isBestKnownView
     ? latestResult.exact
       ? "Certified saved placement"
@@ -2108,6 +2298,8 @@ function renderResult() {
       : `${Math.round(latestResult.elapsedMs).toLocaleString()} ms · ${latestResult.attempts.toLocaleString()} searches`;
   resultModeLabel.textContent = latestResult.isAttemptView
     ? "Grid Attempt"
+    : isPlayerAttempt
+      ? "Your Grid"
     : latestResult.exact
       ? "Best Possible"
       : "Best Found";
@@ -2141,15 +2333,26 @@ function renderResult() {
 }
 
 async function optimize() {
-  if (selected.size !== 20) return;
+  if (selected.size !== 20 || optimizerRunning || recognitionInProgress) return;
 
+  const dealCards = selectedCards();
+  const currentDealKey = dealKey(dealCards);
+  const searchHistory = searchHistoryByDeal.get(currentDealKey);
+  const continuationIndex = searchHistory?.passes ?? 0;
+  recognitionRequestId += 1;
+  optimizerRunning = true;
   resetOptimizerTimer();
+  renderSelectionState();
   optimizeButton.disabled = true;
   optimizeButton.textContent = "Optimizing...";
   clearButton.disabled = true;
   const bestKnown = bestKnownForCurrentDeal();
   const attemptSolution = currentAttemptSolution({ requireSelectedMatch: true });
-  const lowerBoundTotal = Math.max(bestKnown?.score.total ?? 0, attemptSolution?.score.total ?? 0);
+  const lowerBoundTotal = Math.max(
+    bestKnown?.score.total ?? 0,
+    attemptSolution?.score.total ?? 0,
+    searchHistory?.best?.score?.total ?? 0,
+  );
   const proof = exactProofForCurrentDeal();
   const hasCertifiedPlacement =
     bestKnown &&
@@ -2158,14 +2361,19 @@ async function optimize() {
     (!attemptSolution || compareScores(bestKnown.score, attemptSolution.score) >= 0);
 
   if (hasCertifiedPlacement) {
-    latestResult = resultFromBestKnown(bestKnown, { exact: true });
+    latestResult = mergeAttemptIntoResult(
+      resultFromBestKnown(bestKnown, { exact: true }),
+      attemptSolution,
+    );
     activeSolutionIndex = 0;
     statusLine.textContent = `Certified optimum loaded instantly: ${money(bestKnown.score.total)}.`;
     renderResult();
-    optimizeButton.disabled = !canOptimizeCurrentInputs();
+    optimizerRunning = false;
     optimizeButton.textContent = "Optimize";
     clearButton.disabled = false;
-    renderAttemptSummary();
+    const completedStatus = statusLine.textContent;
+    renderSelectionState();
+    statusLine.textContent = completedStatus;
     return;
   }
 
@@ -2176,9 +2384,13 @@ async function optimize() {
     : bestKnown
       ? `saved lower bound ${money(bestKnown.score.total)}`
       : null;
+  const continuationLabel =
+    continuationIndex > 0
+      ? `Continuing search pass ${continuationIndex + 1} with new trajectories`
+      : "Optimizing";
   statusLine.textContent = lowerBoundLabel
-    ? `Optimizing from ${lowerBoundLabel}. ${searchBudgetLabel()}.`
-    : `Optimizing. ${searchBudgetLabel()}.`;
+    ? `${continuationLabel} from ${lowerBoundLabel}. ${searchBudgetLabel()}.`
+    : `${continuationLabel}. ${searchBudgetLabel()}.`;
 
   await new Promise((resolve) => window.setTimeout(resolve, 30));
 
@@ -2186,20 +2398,24 @@ async function optimize() {
     const heuristicBudget = Math.max(750, Math.floor(timeBudget * 0.8));
     const exactBudget = Math.max(0, timeBudget - heuristicBudget);
     setOptimizerTimerPhase("Heuristic search");
-    latestResult = await solveFantasylandHeuristicResponsive(selectedCards(), {
+    latestResult = await solveFantasylandHeuristicResponsive(dealCards, {
       timeLimitMs: heuristicBudget,
       maxSolutions: 12,
       incumbentTotal: lowerBoundTotal,
-      initialPlacements: attemptSolution ? [attemptSolution] : [],
+      initialPlacements: [
+        ...(attemptSolution ? [attemptSolution] : []),
+        ...(searchHistory?.solutions ?? []),
+      ],
+      continuationIndex,
       fastMode: true,
     });
     latestResult = mergeAttemptIntoResult(latestResult, attemptSolution);
     latestResult = mergeBestKnownIntoResult(latestResult, bestKnown);
     const exactStartedAt = performance.now();
     setOptimizerTimerPhase("Exact proof");
-    let exactHighResult = await solveFantasylandExactHighNative(selectedCards(), latestResult.best, exactBudget);
+    let exactHighResult = await solveFantasylandExactHighNative(dealCards, latestResult.best, exactBudget);
     if (!exactHighResult) {
-      exactHighResult = await solveFantasylandExactBucket(selectedCards(), {
+      exactHighResult = await solveFantasylandExactBucket(dealCards, {
         timeLimitMs: exactBudget,
         maxSolutions: 24,
         incumbentSolution: latestResult.best,
@@ -2213,12 +2429,12 @@ async function optimize() {
     if (!latestResult.exact && remainingExactBudget > 50) {
       setOptimizerTimerPhase("Lower buckets");
       let exactThreePlusResult = await solveFantasylandExactThreePlusNative(
-        selectedCards(),
+        dealCards,
         latestResult.best,
         remainingExactBudget,
       );
       if (!exactThreePlusResult) {
-        exactThreePlusResult = await solveFantasylandExactBucket(selectedCards(), {
+        exactThreePlusResult = await solveFantasylandExactBucket(dealCards, {
           timeLimitMs: remainingExactBudget,
           maxSolutions: 24,
           minGridHandCount: 0,
@@ -2236,12 +2452,12 @@ async function optimize() {
       if (!latestResult.exact && remainingExactBudget > 50) {
         setOptimizerTimerPhase("Final buckets");
         let exactLowRowsResult = await solveFantasylandExactLowNative(
-          selectedCards(),
+          dealCards,
           latestResult.best,
           remainingExactBudget,
         );
         if (!exactLowRowsResult) {
-          exactLowRowsResult = await solveFantasylandExactBucket(selectedCards(), {
+          exactLowRowsResult = await solveFantasylandExactBucket(dealCards, {
             timeLimitMs: remainingExactBudget,
             maxSolutions: 24,
             minGridHandCount: 0,
@@ -2259,6 +2475,15 @@ async function optimize() {
       }
     }
     activeSolutionIndex = 0;
+    const continuedSolutions = uniqueSortedSolutions([
+      ...(latestResult.solutions ?? []),
+      latestResult.best,
+    ]).slice(0, 24);
+    searchHistoryByDeal.set(currentDealKey, {
+      passes: continuationIndex + 1,
+      best: continuedSolutions[0] ?? latestResult.best,
+      solutions: continuedSolutions,
+    });
     const savedBestKnown = saveBestKnownSolutions(latestResult.solutions ?? [latestResult.best]);
     const resultStatus = latestResult.exact
       ? "Certified optimum"
@@ -2291,21 +2516,36 @@ async function optimize() {
           : latestResult.workerFallback
             ? "Short fallback search; open localhost for full worker search"
             : "Best found, not proven";
-    statusLine.textContent = `${resultStatus}: ${money(latestResult.best.score.total)}. Bucket bounds shown below.`;
+    const uploadedDifference = attemptSolution
+      ? latestResult.best.score.total - attemptSolution.score.total
+      : null;
+    const uploadComparison =
+      uploadedDifference > 0
+        ? ` Improved the uploaded layout by ${money(uploadedDifference)}.`
+        : uploadedDifference === 0
+          ? " It matches the uploaded layout."
+          : "";
+    const completedPassLabel =
+      continuationIndex > 0 ? `Continuation pass ${continuationIndex + 1} · ` : "";
+    statusLine.textContent =
+      `${completedPassLabel}${resultStatus}: ${money(latestResult.best.score.total)}.${uploadComparison} Bucket bounds shown below.`;
     renderResult();
     finishOptimizerTimer(latestResult.exact ? "Certified" : "Done");
   } catch (error) {
     statusLine.textContent = error instanceof Error ? error.message : "Optimizer failed.";
-    finishOptimizerTimer("Stopped");
+    finishOptimizerTimer("Failed");
   } finally {
-    optimizeButton.disabled = !canOptimizeCurrentInputs();
+    const completedStatus = statusLine.textContent;
+    optimizerRunning = false;
     optimizeButton.textContent = "Optimize";
     clearButton.disabled = false;
-    renderAttemptSummary();
+    renderSelectionState();
+    statusLine.textContent = completedStatus;
   }
 }
 
 function showBestKnownPlacement() {
+  if (optimizerRunning || recognitionInProgress) return;
   const record = bestKnownForCurrentDeal();
   if (!record) return;
   resetOptimizerTimer();
@@ -2326,7 +2566,10 @@ attemptScreenshot.addEventListener("change", handleAttemptScreenshotChange);
 attemptGridSlots.addEventListener("change", handleAttemptSlotChange);
 attemptDiscardSlots.addEventListener("change", handleAttemptSlotChange);
 clearAttemptButton.addEventListener("click", clearAttempt);
+confirmAttemptReviewButton.addEventListener("click", confirmAttemptReview);
 
+renderSelectionState();
+renderEmptyResult();
 await loadSeededBestKnown();
 await loadExactProofStatuses();
 renderSelectionState();

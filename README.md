@@ -1,102 +1,100 @@
 # Pile-Up Poker Solver
 
-A browser-based solver workspace for Puzzmo's Pile-Up Poker.
+A browser-based Fantasyland solver for Puzzmo's Pile-Up Poker and Pile-Up Poker Pro.
 
-Current build:
+Normal and Pro are two modes of one product. Both render from `index.html`, share the same navigation, screenshot
+import, deal editor, attempt comparison, search controls, result portfolio, board renderer, and responsive design.
+Use `?mode=pro` for Pro; `pro.html` is a compatibility redirect for older links.
 
-- Fantasyland card picker for the 36-card deck.
-- Exact hand and placement scoring.
-- Fantasyland optimizer with symmetry-deduped solution results, a fast heuristic incumbent, resumable native exact passes for all proof buckets, and Web Worker JS fallback passes.
-- The UI reports "Best Possible" only when a saved/offline proof or the browser exact pass certifies the optimum; otherwise it reports "Best Found".
-- Score breakdown for rows, columns, corners, and discard.
-- Best-known result tracking per canonical/equivalent 20-card deal family, seeded from `data/best-known-fantasyland.json` and updated in browser local storage when a run finds a better placement.
-- Exact proof-status tracking from offline C++ solver chunks plus browser-local resumable native proof progress from the local Node server.
-- HiGHS MIP and OR-Tools CP-SAT exact-model scaffolding for future certification work.
+## What is implemented
 
-Planning context lives in [docs/context-and-plan.md](./docs/context-and-plan.md).
-The visual and responsive design contract lives in [docs/design-system.md](./docs/design-system.md).
+| | Normal | Pro |
+| --- | --- | --- |
+| Deal | 20 cards from the 36-card `6`–`A` deck | 30 cards from all 52 cards plus the required joker |
+| Placement | 4×4 grid + 4 discard | 5×5 grid + 5 discard |
+| Hands | 4 rows, 4 columns, 4 corners | 5 rows, 5 columns, 4 corners + center |
+| Search | Anytime heuristic plus resumable exact proof buckets | Anytime heuristic with structural and unrestricted search lanes |
+| Joker | — | Independently wild in every hand it touches |
+
+The app also includes:
+
+- Exact scoring and per-line score explanations for both modes.
+- Screenshot recognition for supported Pile-Up Poker phone layouts, including dark/light themes, cropped boards,
+  shifted screenshots, tilted tray cards, Pro face cards, and the joker.
+- Screenshot score/hand-count checksum validation. Recognition uncertainty is advisory and never blocks Optimize for
+  a complete, duplicate-free deal.
+- A player-entered or recognized layout as a protected search floor, with an explicit “Your grid” result.
+- Grouped results that collapse equivalent rotations/switches while preserving genuinely different scoring-way
+  variants.
+- Deep search by default. Repeated Optimize runs keep prior leaders and advance to a fresh deterministic search
+  stream for the same deal.
+- Browser-local best-known results. Normal can additionally read/write the repo-backed local cache and run native
+  exact chunks when served by the local Node server.
+
+The recognizer runs entirely in the browser. Uploaded images and card identities are not transmitted. Confirming
+“Cards Look Right” without edits emits only a local, privacy-safe UI event so over-sensitive warnings can be
+diagnosed during development.
 
 ## Run
+
+Requires a current Node.js release.
 
 ```bash
 pnpm dev
 ```
 
-Then open:
+Open `http://127.0.0.1:5173/`. Use the local server instead of opening `file://` when working on Normal's native
+exact-search chunks or repo-backed best-known cache.
 
-```text
-http://127.0.0.1:5173/
-```
-
-Use `server.mjs`/`pnpm dev` rather than a plain static file server. The app still loads statically, but the native exact-search chunk endpoint lives at `/api/exact-high-chunk`.
-
-## Test
+## Test and build
 
 ```bash
 pnpm test
+pnpm build:pages
 ```
 
-The screenshot-recognition suite includes labelled phone screenshots in
-`tests/fixtures/`. It verifies every grid and tray card, including tilted tray
-cards and the cropped-board layout. Add each newly corrected screenshot there
-before changing recognition logic so recognition accuracy is measured against a
-growing regression set rather than one-off examples.
+`pnpm test` covers Normal and Pro scoring, optimizer regression deals, screenshot fixtures, recognition feedback,
+solution grouping, the shared design/UI contracts, and the production bundle contract.
 
-## GitHub Pages
+The Pro regression suite includes the supplied `$25,560` layout and requires the mixed rank/suit QA deal to reach at
+least `$25,140` from scratch. Recognition fixtures live in `tests/fixtures/`; every corrected screenshot should be
+added there before recognition logic changes.
 
-This repo is set up for GitHub Pages with `.github/workflows/pages.yml`. After pushing to GitHub:
+`pnpm build:pages` creates `dist/` with only the static runtime:
 
-1. Open the repository on GitHub.
-2. Go to Settings -> Pages.
-3. Set Source to "GitHub Actions".
-4. Push to `main` or run the "Deploy GitHub Pages" workflow manually.
+- `index.html`, `pro.html`, `styles.css`, `favicon.svg`, and `.nojekyll`
+- executable `src/` modules
+- the three JSON files the Normal runtime reads
 
-The deployed Pages app is static. It can read committed data from `data/*.json`, save browser-local results in the visitor's localStorage, and run the browser exact fallback inside a module Web Worker so the UI stays responsive during proof chunks. It cannot call the local C++ exact solver API or write new best-known placements back to the repo. For file-backed local persistence and native C++ chunks, run `pnpm dev` and use `http://127.0.0.1:5173/`.
+Tests, tools, fixture images, native binaries, and multi-megabyte exact-search logs are intentionally excluded.
 
-V2 direction: add a small production backend for shared best-known placements and lightweight deal analytics. The app should store parsed cards/results, not uploaded screenshots, and the backend should verify submitted scores before updating any shared cache.
+## Production
 
-The worker also supports an optional WASM exact backend. If `src/wasm/exactSolver.mjs` exists and exports `createExactSolver()`, the worker will try it before the JS fallback. See `src/wasm/README.md` for the expected module shape.
+`.github/workflows/pages.yml` is the production pipeline. A push to `main`:
 
-## Exact Solver Experiment
+1. runs the complete test suite;
+2. builds the explicit `dist/` bundle;
+3. deploys that artifact to GitHub Pages.
+
+The deployed app is static. It can run both browser heuristics, store browser-local records, and run Normal's Web
+Worker exact fallback. It cannot call the local native-solver API or write new records into the repository.
+
+## Normal exact-search tools
+
+Normal retains the compiled C++ bucket certifier and Python orchestration tools for offline proofs:
 
 ```bash
-python3 -m pip install -r requirements.txt
-python3 tools/exact_fantasyland.py --sample --ten-hands-only --time-limit 90 --pretty
-```
-
-The faster experimental high-bucket certifier is compiled C++ and can run in resumable discard chunks:
-
-```bash
-python3 tools/run_exact_10_chunks.py --sample --incumbent 15270 --high-buckets --start-skip 0 --chunks 5000 --discard-limit 1 --seconds-per-chunk 60 --progress-every 100
+pnpm compile:exact
+python3 tools/run_exact_10_chunks.py --sample --incumbent 15270 --high-buckets --chunks 5000 --seconds-per-chunk 60
 python3 tools/summarize_exact_10_log.py --sample --incumbent 15270 --high-buckets
 ```
 
-The broad `--high-buckets` mode searches every 8-, 9-, and 10-hand placement. Seven or fewer scoring hands cannot beat the current `$15,270` incumbent because their theoretical maximum is `$14,400`. The sample proof is complete in `data/exact-high-runs.jsonl`, summarized for the app in `data/exact-proof-status.json`.
+The sample `$15,270` result is certified. Proof progress is summarized into `data/exact-proof-status.json`; raw
+JSONL logs are development artifacts and are not deployed. The optional future WASM contract is documented in
+`src/wasm/README.md`.
 
-The same native binary also supports `--three-plus-low`, which searches the next proof bucket: every placement whose best row/column orientation has at least 3 scoring rows and at most 7 scoring grid hands. If this bucket exhausts and the incumbent is above the 0/1/2-row ceiling of `$8,100`, the app can certify the optimum without entering the final low-region pass. If needed, `--low-two` searches that final 0/1/2-row region with at most 2 scoring columns.
+## Project documentation
 
-The global full-deck maximum proof helper targets the current `$27,420` best-known construction:
-
-```bash
-python3 tools/prove_global_max.py --mode verify-known
-python3 tools/prove_global_max.py --split-corners --threshold 3225 --time-limit 300 --encoding bool
-```
-
-Why `$3,225`: 9-or-fewer hands cannot beat `$27,420`, and a 10-hand placement can add at most `$1,350` from discard. Proving that no 9-hand grid can reach `$3,225` before discard would certify `$27,420` as the global optimum. The current CP-SAT encodings are proof scaffolding and may return `UNKNOWN`; stronger decomposition is still needed for a complete certificate.
-
-## Notes
-
-The UI optimizer is an anytime search plus native exact chunks when served by `server.mjs`, with a Web Worker JS exact fallback for static hosts. The scorer is exact. For the screenshot sample, `$14,880` is not optimal; `$15,270` is certified optimal for that sample deal by the offline high-bucket proof.
-
-For maximization, the saved "best known" score is a lower bound on the true optimum. Browser-local records are stored by canonical deal key, so equivalent deals can reuse the strongest known lower bound with the placement translated onto the selected cards. All native proof passes store safe resume progress by canonical deal key. Progress is tracked by fully checked discard candidates plus completed row partitions inside the current discard candidate, so timed-out chunks can resume within a long-running discard instead of restarting it. The exact passes cover the full proof space in phases: 8/9/10 hands, then 3+/4-row low buckets, then 0/1/2-row low buckets. The app still labels a result "Best Found" whenever those proof phases time out, so users can continue running chunks until the deal is certified.
-
-Browser-local cache keys:
-
-- `pile-up-poker.best-known-fantasyland.v3`: best-known scores plus one saved placement for every distinct tied scoring profile found, grouped by canonical deal key. The app also reads and migrates the legacy v1/v2 singleton records.
-- `pile-up-poker.exact-progress.v2`: resumable native proof progress by canonical deal key.
-
-Repo-backed local data:
-
-- `data/local-best-known-fantasyland.json`: best-known placements and tied scoring-profile representatives saved by the local Node server at `/api/local-best-known`.
-
-These caches are origin-specific. `http://127.0.0.1:5173/` and `file:///.../index.html` do not share browser local storage, and only the `http://127.0.0.1:5173/` Node server path can use the native exact solver API or write to `data/local-best-known-fantasyland.json`.
+- [Product context and architecture](./docs/context-and-plan.md)
+- [Design system and visual QA contract](./docs/design-system.md)
+- [Optimizer search explanation](./docs/solver-search-explanation.md)

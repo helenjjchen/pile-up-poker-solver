@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { SAMPLE_FANTASYLAND_DEAL, canonicalDealKey, sortCardIds, translatePlacementToDeal } from "../src/cards.js";
 import { solveFantasylandExactHighBuckets } from "../src/exactHighBucketSolver.js";
-import { solveFantasylandHeuristic } from "../src/heuristicSolver.js";
+import {
+  __heuristicTestHooks,
+  solveFantasylandHeuristic,
+} from "../src/heuristicSolver.js";
 import {
   canonicalScoreStructureKey,
   solutionStructureKey,
@@ -101,6 +104,67 @@ assert.equal(isPayoutFeasibleTotal(8222), false);
 assert.equal(isPayoutFeasibleForHandCount(14370, 10), true);
 assert.equal(isPayoutFeasibleForHandCount(1070, 10), false);
 assert.equal(BOARD_TRANSFORMS.length, 32);
+
+const fastEvaluator = __heuristicTestHooks.createFastStateEvaluator([
+  ...screenshotGrid,
+  ...screenshotDiscard,
+]);
+const screenshotState = [...screenshotGrid, ...screenshotDiscard];
+const fastBaseScore = fastEvaluator.evaluateState(screenshotState);
+assert.deepEqual(
+  {
+    total: fastBaseScore.total,
+    base: fastBaseScore.base,
+    multiplier: fastBaseScore.multiplier,
+    handCount: fastBaseScore.handCount,
+    qualityHandCount: fastBaseScore.qualityHandCount,
+  },
+  {
+    total: screenshotScore.total,
+    base: screenshotScore.base,
+    multiplier: screenshotScore.multiplier,
+    handCount: screenshotScore.handCount,
+    qualityHandCount: screenshotScore.qualityHandCount,
+  },
+);
+for (let first = 0; first < screenshotState.length - 1; first += 1) {
+  for (let second = first + 1; second < screenshotState.length; second += 1) {
+    [screenshotState[first], screenshotState[second]] = [
+      screenshotState[second],
+      screenshotState[first],
+    ];
+    const fastSwapScore = fastEvaluator.evaluateSwap(
+      screenshotState,
+      fastBaseScore,
+      first,
+      second,
+    );
+    const fullSwapScore = scorePlacement(
+      screenshotState.slice(0, 16),
+      screenshotState.slice(16),
+    );
+    assert.deepEqual(
+      {
+        total: fastSwapScore.total,
+        base: fastSwapScore.base,
+        multiplier: fastSwapScore.multiplier,
+        handCount: fastSwapScore.handCount,
+        qualityHandCount: fastSwapScore.qualityHandCount,
+      },
+      {
+        total: fullSwapScore.total,
+        base: fullSwapScore.base,
+        multiplier: fullSwapScore.multiplier,
+        handCount: fullSwapScore.handCount,
+        qualityHandCount: fullSwapScore.qualityHandCount,
+      },
+    );
+    [screenshotState[first], screenshotState[second]] = [
+      screenshotState[second],
+      screenshotState[first],
+    ];
+  }
+}
 
 const interiorRowSwapGrid = [...screenshotGrid];
 for (let col = 0; col < 4; col += 1) {
@@ -465,6 +529,23 @@ const seededScreenshotHeuristic = solveFantasylandHeuristic(screenshotAttemptDea
 assert.equal(seededScreenshotHeuristic.best.score.total >= screenshotAttemptScore.total, true);
 assert.equal(
   seededScreenshotHeuristic.solutions.some((solution) => solution.score.total >= screenshotAttemptScore.total),
+  true,
+);
+const continuedScreenshotHeuristic = solveFantasylandHeuristic(
+  screenshotAttemptDeal,
+  {
+    timeLimitMs: 100,
+    maxSolutions: 8,
+    fastMode: true,
+    incumbentTotal: seededScreenshotHeuristic.best.score.total,
+    initialPlacements: seededScreenshotHeuristic.solutions,
+    continuationIndex: 1,
+  },
+);
+assert.equal(continuedScreenshotHeuristic.continuationIndex, 1);
+assert.equal(
+  continuedScreenshotHeuristic.best.score.total >=
+    seededScreenshotHeuristic.best.score.total,
   true,
 );
 

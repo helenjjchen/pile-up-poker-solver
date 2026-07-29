@@ -1,6 +1,7 @@
 export const SCORING_HAND_ORDER = [
   ["straight-flush", "straight flush", "straight flushes"],
   ["four-kind", "quad", "quads"],
+  ["full-house", "full house", "full houses"],
   ["straight", "straight", "straights"],
   ["three-kind", "trip", "trips"],
   ["flush", "flush", "flushes"],
@@ -32,6 +33,64 @@ export function scoringHandCounts(solution) {
 export function solutionHandProfileKey(solution) {
   const counts = scoringHandCounts(solution);
   return SCORING_HAND_ORDER.map(([key]) => counts.get(key) ?? 0).join("|");
+}
+
+export function solutionOutcomeProfileKey(solution) {
+  const outcomeKey = solutionOutcomeKey(solution);
+  if (!outcomeKey) return "";
+  return `${outcomeKey}::${solutionHandProfileKey(solution)}`;
+}
+
+export function uniqueSolutionsByOutcomeProfile(solutions) {
+  const seen = new Set();
+  return solutions.filter(Boolean).filter((solution) => {
+    const key = solutionOutcomeProfileKey(solution);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function groupSolutionsByOutcome(solutions = []) {
+  const groups = [];
+  const byKey = new Map();
+
+  solutions.filter(Boolean).forEach((solution, index) => {
+    const key = solutionOutcomeKey(solution);
+    let group = byKey.get(key);
+    if (!group) {
+      group = {
+        key,
+        representative: solution,
+        indexes: [],
+        solutions: [],
+        variants: [],
+        variantsByKey: new Map(),
+      };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+
+    const profileKey = solutionHandProfileKey(solution);
+    let variant = group.variantsByKey.get(profileKey);
+    if (!variant) {
+      variant = {
+        key: profileKey,
+        representative: solution,
+        indexes: [],
+        solutions: [],
+      };
+      group.variantsByKey.set(profileKey, variant);
+      group.variants.push(variant);
+    }
+
+    group.indexes.push(index);
+    group.solutions.push(solution);
+    variant.indexes.push(index);
+    variant.solutions.push(solution);
+  });
+
+  return groups;
 }
 
 export function scoringHandSummary(solution) {

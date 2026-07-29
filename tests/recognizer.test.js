@@ -4,15 +4,101 @@ import {
   __recognizerTestHooks,
   recognizedScoreMismatch,
 } from "../src/screenshotRecognizer.js";
+import { PRO_RANK_GLYPH_TEMPLATES } from "../src/proRankGlyphTemplates.js";
 
 const {
+  assertProScreenshotDimensions,
   classifyRank,
   classifyScoreDigit,
   consensusValue,
   displayedScoreRects,
   displayedScoreTotalFromDigits,
+  isProDisplayedScorePairFeasible,
+  proFallbackSlotRects,
+  proRecognizedScoreMismatch,
   resolveDeckConflicts,
+  selectProDisplayedScoreTotal,
 } = __recognizerTestHooks;
+
+assert.deepEqual(
+  Object.keys(PRO_RANK_GLYPH_TEMPLATES),
+  ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"],
+);
+assert.ok(Object.values(PRO_RANK_GLYPH_TEMPLATES).every((templates) => templates.length >= 1));
+const proRects = proFallbackSlotRects(588, 1280);
+assert.equal(proRects.grid.length, 25);
+assert.equal(proRects.discard.length, 5);
+assert.equal(new Set(proRects.grid.map((rect) => rect.top)).size, 5);
+assert.equal(isProDisplayedScorePairFeasible(23040, 12), true);
+assert.equal(isProDisplayedScorePairFeasible(1830, 7), true);
+assert.equal(
+  isProDisplayedScorePairFeasible(23040, 1),
+  false,
+  "a one-hand OCR read cannot plausibly produce the reference board's score",
+);
+assert.equal(isProDisplayedScorePairFeasible(1831, 7), false);
+assert.equal(
+  selectProDisplayedScoreTotal([11830, 1830], 7),
+  1830,
+  "a split dollar sign must not become an extra leading 1",
+);
+assert.equal(
+  selectProDisplayedScoreTotal([1830, 830], 7),
+  1830,
+  "the ordinary one-component dollar sign should keep the first plausible read",
+);
+assert.equal(
+  selectProDisplayedScoreTotal([23040, 3040], 12),
+  23040,
+  "a valid five-digit Pro total must keep its leading digit",
+);
+assert.equal(
+  selectProDisplayedScoreTotal([15000, 5000], 8),
+  15000,
+  "the primary five-digit read must win when both possible starts are feasible",
+);
+assert.equal(
+  selectProDisplayedScoreTotal([11830, 1830], null),
+  11830,
+  "without a hand-count checksum the recognizer should not guess which leading glyph is noise",
+);
+
+const proReferenceBGrid = [
+  "JK", "2C", "2S", "3S", "4D",
+  "4S", "6C", "6S", "7S", "8H",
+  "8C", "8D", "8S", "9H", "9D",
+  "9S", "10H", "JH", "JD", "QC",
+  "KH", "KC", "AC", "AD", "AS",
+];
+const proReferenceBDiscard = ["3D", "3H", "3C", "4H", "2D"];
+assert.equal(
+  proRecognizedScoreMismatch(
+    proReferenceBGrid,
+    proReferenceBDiscard,
+    { total: 1830, handCount: 6 },
+  ),
+  null,
+  "the trusted Pro total should outrank a stray hand-count OCR read",
+);
+const proWrongTotal = proRecognizedScoreMismatch(
+  proReferenceBGrid,
+  proReferenceBDiscard,
+  { total: 1800, handCount: 7 },
+);
+assert.equal(proWrongTotal.totalMismatch, true);
+assert.equal(proWrongTotal.handCountMismatch, false);
+const proHandCountOnly = proRecognizedScoreMismatch(
+  proReferenceBGrid,
+  proReferenceBDiscard,
+  { total: null, handCount: 6 },
+);
+assert.equal(proHandCountOnly.totalMismatch, false);
+assert.equal(proHandCountOnly.handCountMismatch, true);
+assert.throws(
+  () => assertProScreenshotDimensions(499, 1280),
+  /original full-resolution Pro screenshot \(at least 500px wide\)/,
+);
+assert.doesNotThrow(() => assertProScreenshotDimensions(500, 1280));
 
 const rankShapes = {
   "6": {
@@ -273,6 +359,15 @@ assert.equal(
     discard: ["KC", "QC", "AC", "JC"],
   }),
   null,
+);
+assert.equal(
+  recognizedScoreMismatch({
+    ...completeButWrongRead,
+    discard: ["KC", "QC", "AC", "JC"],
+    displayedScore: { handCount: 6, total: 14370 },
+  }),
+  null,
+  "the trusted Normal total should outrank a stray hand-count OCR read",
 );
 
 const conflictingSpades = [

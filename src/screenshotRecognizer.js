@@ -1,4 +1,5 @@
 import { RANK_GLYPH_MASK_SIZE, RANK_GLYPH_TEMPLATES } from "./rankGlyphTemplates.js";
+import { PRO_RANK_GLYPH_TEMPLATES } from "./proRankGlyphTemplates.js";
 import { SCORE_GLYPH_MASK_SIZE, SCORE_GLYPH_TEMPLATES } from "./scoreGlyphTemplates.js";
 import { SUIT_GLYPH_MASK_SIZE, SUIT_GLYPH_TEMPLATES } from "./suitGlyphTemplates.js";
 import {
@@ -6,6 +7,12 @@ import {
   isPayoutFeasibleTotal,
   scorePlacement,
 } from "./scoring.js?v=scoring-feasibility-1";
+import {
+  proMultiplierForHandCount,
+  scoreProPlacement,
+} from "./proScoring.js";
+import { PRO_STANDARD_DECK } from "./proCards.js";
+import { DECK } from "./cards.js";
 
 const GRID_CENTERS_X = [0.306, 0.476, 0.646, 0.815];
 const GRID_CENTERS_Y = [0.236, 0.343, 0.45, 0.556];
@@ -30,6 +37,29 @@ const CROPPED_BOARD_LAYOUT = {
   trayHeight: 0.16,
   trayCenterY: 0.872,
 };
+const PRO_FULL_SCREEN_LAYOUT = {
+  gridCentersX: [0.266, 0.409, 0.552, 0.695, 0.839],
+  gridCentersY: [0.229, 0.32, 0.411, 0.501, 0.592],
+  trayCentersX: [0.218, 0.363, 0.508, 0.653, 0.798],
+  gridWidth: 0.14,
+  gridHeight: 0.089,
+  trayWidth: 0.145,
+  trayHeight: 0.11,
+  trayCenterY: 0.92,
+};
+const PRO_CROPPED_BOARD_LAYOUT = {
+  // Cropped/shared gameplay captures omit the app header and leave the board
+  // at the top of the image. The horizontal geometry is unchanged, while the
+  // five card rows occupy a larger share of the shorter image.
+  gridCentersX: [0.266, 0.409, 0.552, 0.695, 0.839],
+  gridCentersY: [0.118, 0.238, 0.358, 0.478, 0.598],
+  trayCentersX: [0.218, 0.363, 0.508, 0.653, 0.798],
+  gridWidth: 0.14,
+  gridHeight: 0.116,
+  trayWidth: 0.145,
+  trayHeight: 0.14,
+  trayCenterY: 0.96,
+};
 const GRID_RANK_CROPS = [
   { xStart: 0.11, xEnd: 0.34, yStart: 0.06, yEnd: 0.25 },
   { xStart: 0.08, xEnd: 0.43, yStart: 0.055, yEnd: 0.25 },
@@ -49,6 +79,8 @@ const MIN_FOCUSED_TEMPLATE_RANK_SCORE = 0.45;
 const MIN_FOCUSED_TEMPLATE_RANK_MARGIN = 0.07;
 const MIN_SUIT_GLYPH_SCORE = 0.58;
 const MAX_DISPLAYED_SCORE_TOTAL = 40000;
+const MAX_PRO_DISPLAYED_SCORE_TOTAL = 40500;
+const MIN_PRO_SCREENSHOT_WIDTH = 500;
 const SCORE_CONTRAST_THRESHOLDS = [900, 2500, 6400, 10000, 14400];
 const SUITS = ["H", "S", "C", "D"];
 
@@ -104,6 +136,44 @@ function fallbackSlotRects(width, height) {
     ),
   );
 
+  return { grid, discard };
+}
+
+function proFallbackSlotRects(width, height) {
+  const layout =
+    height / width < 1.9
+      ? PRO_CROPPED_BOARD_LAYOUT
+      : PRO_FULL_SCREEN_LAYOUT;
+  const gridWidth = width * layout.gridWidth;
+  const gridHeight = height * layout.gridHeight;
+  const trayWidth = width * layout.trayWidth;
+  const trayHeight = height * layout.trayHeight;
+  const grid = layout.gridCentersY.flatMap((centerY) =>
+    layout.gridCentersX.map((centerX) =>
+      clampRect(
+        {
+          left: width * centerX - gridWidth / 2,
+          top: height * centerY - gridHeight / 2,
+          right: width * centerX + gridWidth / 2,
+          bottom: height * centerY + gridHeight / 2,
+        },
+        width,
+        height,
+      ),
+    ),
+  );
+  const discard = layout.trayCentersX.map((centerX) =>
+    clampRect(
+      {
+        left: width * centerX - trayWidth / 2,
+        top: height * layout.trayCenterY - trayHeight / 2,
+        right: width * centerX + trayWidth / 2,
+        bottom: height * layout.trayCenterY + trayHeight / 2,
+      },
+      width,
+      height,
+    ),
+  );
   return { grid, discard };
 }
 
@@ -372,6 +442,65 @@ function templateRankCandidates(imageData, rect, zone) {
   });
 
   return [...candidates.values()].sort((a, b) => b.confidence - a.confidence);
+}
+
+function proDiscardRankPoints(imageData, rect, inkColor) {
+  if (!inkColor) return null;
+  const width = rectWidth(rect);
+  const height = rectHeight(rect);
+  const points = [];
+  const scanTop = Math.max(0, rect.top - Math.max(24, Math.round(height * 0.3)));
+  const right = Math.min(rect.right, Math.round(rect.left + width * 0.46));
+
+  for (let y = scanTop; y < rect.bottom; y += 1) {
+    for (let x = rect.left; x < right; x += 1) {
+      const color = pixelAt(imageData, x, y);
+      if (colorChroma(color) < 5 || colorDistance(color, inkColor) > 6400) continue;
+      points.push([x - rect.left, y - scanTop]);
+    }
+  }
+  if (!points.length) return null;
+
+  const firstInkY = Math.min(...points.map(([, y]) => y));
+  const rankBandBottom = firstInkY + Math.max(20, Math.round(height * 0.18));
+  return normalizePoints(points.filter(([, y]) => y <= rankBandBottom));
+}
+
+function proTemplateRankCandidates(imageData, rect, zone, inkColor = null) {
+  const topEdge = zone === "discard" ? cardTopEdgeLine(imageData, rect) : null;
+  const dynamicDiscardMask =
+    zone === "discard" ? proDiscardRankPoints(imageData, rect, inkColor) : null;
+  const dynamicDiscardDensity = dynamicDiscardMask?.width && dynamicDiscardMask?.height
+    ? dynamicDiscardMask.points.length / (dynamicDiscardMask.width * dynamicDiscardMask.height)
+    : 0;
+  const masks =
+    zone === "discard"
+      ? dynamicDiscardMask && dynamicDiscardDensity < 0.72
+        ? [dynamicDiscardMask]
+        : [
+            ...DISCARD_RANK_CROPS.map((crop) => rankPoints(imageData, rect, crop, topEdge)),
+            ...TEMPLATE_DISCARD_RANK_CROPS.map((crop) =>
+              rankPointsFromCardFrame(imageData, rect, crop, topEdge),
+            ),
+          ]
+      : [rankPoints(imageData, rect, GRID_RANK_CROPS[0])];
+  const candidates = new Map();
+
+  masks.forEach((rawMask) => {
+    const mask = normalizedRankMask(
+      removeArtifactComponents(rawMask ?? { points: [], width: 0, height: 0 }),
+    );
+    if (!mask) return;
+    Object.entries(PRO_RANK_GLYPH_TEMPLATES).forEach(([rank, templates]) => {
+      const score = Math.max(...templates.map((template) => rankTemplateScore(mask, template)));
+      const existing = candidates.get(rank);
+      if (!existing || score > existing.confidence) {
+        candidates.set(rank, { rank, confidence: score });
+      }
+    });
+  });
+
+  return [...candidates.values()].sort((first, second) => second.confidence - first.confidence);
 }
 
 function connectedComponents(points, width, height) {
@@ -802,6 +931,10 @@ function classifyRankCandidate(imageData, rect, crop, topEdge = null) {
     top: points.filter(([, y]) => y < height * 0.33).length,
     middleY: points.filter(([, y]) => y >= height * 0.33 && y < height * 0.66).length,
     bottom: points.filter(([, y]) => y >= height * 0.66).length,
+    upperLeft: points.filter(([x, y]) => x < width * 0.42 && y < height * 0.5).length,
+    upperRight: points.filter(([x, y]) => x >= width * 0.58 && y < height * 0.5).length,
+    lowerLeft: points.filter(([x, y]) => x < width * 0.42 && y >= height * 0.5).length,
+    lowerRight: points.filter(([x, y]) => x >= width * 0.58 && y >= height * 0.5).length,
   };
 
   return classifyRank(features);
@@ -887,12 +1020,15 @@ function classifyRankFromSlot(imageData, rect, zone) {
 function recognizeSlot(imageData, rect, zone) {
   const suitResult = classifySuit(imageData, rect, zone);
   const rankResult = classifyRankFromSlot(imageData, rect, zone);
+  const rankMargin =
+    rankResult.confidence - (rankResult.alternatives?.[0]?.confidence ?? 0);
   return {
     cardId: rankResult.rank && suitResult.suit ? `${rankResult.rank}${suitResult.suit}` : null,
     rank: rankResult.rank,
     suit: suitResult.suit,
     confidence: Math.min(suitResult.confidence, rankResult.confidence),
     rankConfidence: rankResult.confidence,
+    rankMargin,
     suitConfidence: suitResult.confidence,
     suitMargin: suitResult.margin,
     suitScores: suitResult.suitScores,
@@ -902,6 +1038,51 @@ function recognizeSlot(imageData, rect, zone) {
       rank: alternative.rank,
       suit: suitResult.suit,
       confidence: Math.min(suitResult.confidence, alternative.confidence),
+    })),
+  };
+}
+
+function recognizeProSlot(imageData, rect, zone) {
+  const suitResult = classifySuit(imageData, rect, zone);
+  const proCandidates = proTemplateRankCandidates(
+    imageData,
+    rect,
+    zone,
+    suitResult.inkColor,
+  );
+  const templateRank = proCandidates[0];
+  const genericRank = classifyRankFromSlot(imageData, rect, zone);
+  const useTemplate = templateRank?.confidence >= 0.48;
+  const rankResult = useTemplate
+    ? {
+        ...templateRank,
+        confidence: Math.max(0.62, templateRank.confidence),
+        alternatives: proCandidates.slice(1, 9),
+      }
+    : genericRank;
+  const rankMargin = useTemplate
+    ? templateRank.confidence - (proCandidates[1]?.confidence ?? 0)
+    : rankResult.confidence - (rankResult.alternatives?.[0]?.confidence ?? 0);
+
+  return {
+    cardId: rankResult.rank && suitResult.suit ? `${rankResult.rank}${suitResult.suit}` : null,
+    rank: rankResult.rank,
+    suit: suitResult.suit,
+    confidence: Math.min(suitResult.confidence, rankResult.confidence),
+    rankConfidence: rankResult.confidence,
+    rankMargin,
+    suitConfidence: suitResult.confidence,
+    suitMargin: suitResult.margin,
+    suitScores: suitResult.suitScores,
+    inkColor: suitResult.inkColor,
+    alternatives: rankResult.alternatives.map((alternative) => ({
+      cardId: suitResult.suit ? `${alternative.rank}${suitResult.suit}` : null,
+      rank: alternative.rank,
+      suit: suitResult.suit,
+      confidence: Math.min(
+        suitResult.confidence,
+        Math.max(0.58, alternative.confidence),
+      ),
     })),
   };
 }
@@ -1560,7 +1741,7 @@ function detectSlotRects(imageData) {
   return { grid, discard };
 }
 
-function discardRowRecognitionScore(slots) {
+function discardRowRecognitionScore(slots, expectedCount) {
   const recognizedCards = slots.map((slot) => slot.cardId).filter(Boolean);
   const uniqueCards = new Set(recognizedCards);
   const confidence = slots.reduce((sum, slot) => sum + slot.confidence, 0);
@@ -1573,23 +1754,30 @@ function discardRowRecognitionScore(slots) {
   return (
     confidence +
     uniqueCards.size * 0.1 +
-    (recognizedCards.length === 4 ? 0.2 : 0) -
+    (recognizedCards.length === expectedCount ? 0.2 : 0) -
     duplicateCount * 0.35
   );
 }
 
-function refineDiscardRects(imageData, discardRects) {
-  if (discardRects.length !== 4) return discardRects;
+function refineDiscardRects(
+  imageData,
+  discardRects,
+  expectedCount = 4,
+  recognize = recognizeSlot,
+  maxOffsetRatio = 0.65,
+) {
+  if (discardRects.length !== expectedCount) return discardRects;
 
   const nominalHeight = median(discardRects.map(rectHeight));
   if (!nominalHeight) return discardRects;
 
-  const nominalSlots = discardRects.map((rect) => recognizeSlot(imageData, rect, "discard"));
+  const nominalSlots = discardRects.map((rect) => recognize(imageData, rect, "discard"));
   const nominalCards = nominalSlots.map((slot) => slot.cardId).filter(Boolean);
-  const nominalScore = discardRowRecognitionScore(nominalSlots);
+  const nominalScore = discardRowRecognitionScore(nominalSlots, expectedCount);
   if (
-    nominalCards.length === 4 &&
-    new Set(nominalCards).size === 4 &&
+    nominalCards.length === expectedCount &&
+    new Set(nominalCards).size === expectedCount &&
+    expectedCount === 4 &&
     nominalScore >= 3.7
   ) {
     return discardRects;
@@ -1597,7 +1785,7 @@ function refineDiscardRects(imageData, discardRects) {
 
   const step = Math.max(2, Math.round(nominalHeight * 0.03));
   const firstOffset = Math.round(nominalHeight * -0.15);
-  const lastOffset = Math.round(nominalHeight * 0.65);
+  const lastOffset = Math.round(nominalHeight * maxOffsetRatio);
   let best = { rects: discardRects, score: nominalScore };
 
   for (let offset = firstOffset; offset <= lastOffset; offset += step) {
@@ -1613,12 +1801,143 @@ function refineDiscardRects(imageData, discardRects) {
         imageData.height,
       ),
     );
-    const slots = rects.map((rect) => recognizeSlot(imageData, rect, "discard"));
-    const score = discardRowRecognitionScore(slots);
+    const slots = rects.map((rect) => recognize(imageData, rect, "discard"));
+    const score = discardRowRecognitionScore(slots, expectedCount);
     if (score > best.score) best = { rects, score };
   }
 
   return best.rects;
+}
+
+function shiftSlotRects(rects, dx, dy, width, height) {
+  return rects.map((rect) =>
+    clampRect(
+      {
+        left: rect.left + dx,
+        top: rect.top + dy,
+        right: rect.right + dx,
+        bottom: rect.bottom + dy,
+      },
+      width,
+      height,
+    ),
+  );
+}
+
+function proGridAlignmentScore(imageData, rects) {
+  // Eight cards spread across the board are enough to align the shared frame.
+  // Sampling keeps upload latency low while avoiding the Joker-prone center.
+  const alignmentSampleIndices = [1, 3, 5, 9, 15, 19, 21, 23];
+  const slots = alignmentSampleIndices.map((index) =>
+    recognizeProSlot(imageData, rects[index], "grid"),
+  );
+  const recognizedCards = slots.map((slot) => slot.cardId).filter(Boolean);
+  const duplicateCount = recognizedCards.length - new Set(recognizedCards).size;
+  return (
+    slots.reduce(
+      (sum, slot) =>
+        sum +
+        slot.rankConfidence +
+        slot.suitConfidence +
+        Math.max(-0.1, Math.min(0.1, slot.rankMargin ?? 0)) * 3,
+      0,
+    ) +
+    recognizedCards.length * 0.04 -
+    duplicateCount * 0.2
+  );
+}
+
+function scaledAlignmentOffsets(radius, scale) {
+  return [
+    ...new Set(
+      Array.from({ length: radius * 2 + 1 }, (_, index) =>
+        Math.round((index - radius) * scale),
+      ),
+    ),
+  ];
+}
+
+function alignProFallbackRects(imageData, fallbackRects) {
+  const horizontalOffsets = scaledAlignmentOffsets(4, imageData.width / 588);
+  const verticalOffsets = scaledAlignmentOffsets(5, imageData.height / 1280);
+  let best = {
+    grid: fallbackRects.grid,
+    discard: fallbackRects.discard,
+    score: proGridAlignmentScore(imageData, fallbackRects.grid),
+  };
+
+  verticalOffsets.forEach((dy) => {
+    const grid = shiftSlotRects(
+      fallbackRects.grid,
+      0,
+      dy,
+      imageData.width,
+      imageData.height,
+    );
+    const score = proGridAlignmentScore(imageData, grid);
+    if (score <= best.score) return;
+    best = {
+      grid,
+      discard: shiftSlotRects(
+        fallbackRects.discard,
+        0,
+        dy,
+        imageData.width,
+        imageData.height,
+      ),
+      score,
+    };
+  });
+
+  const verticalBest = best;
+  horizontalOffsets.forEach((dx) => {
+    const grid = shiftSlotRects(
+      verticalBest.grid,
+      dx,
+      0,
+      imageData.width,
+      imageData.height,
+    );
+    const score = proGridAlignmentScore(imageData, grid);
+    if (score <= best.score) return;
+    best = {
+      grid,
+      discard: shiftSlotRects(
+        verticalBest.discard,
+        dx,
+        0,
+        imageData.width,
+        imageData.height,
+      ),
+      score,
+    };
+  });
+
+  const horizontalBest = best;
+  verticalOffsets.forEach((dy) => {
+    const grid = shiftSlotRects(
+      horizontalBest.grid,
+      0,
+      dy,
+      imageData.width,
+      imageData.height,
+    );
+    const score = proGridAlignmentScore(imageData, grid);
+    if (score <= best.score) return;
+    best = {
+      grid,
+      discard: shiftSlotRects(
+        horizontalBest.discard,
+        0,
+        dy,
+        imageData.width,
+        imageData.height,
+      ),
+      score,
+    };
+  });
+
+  return { grid: best.grid, discard: best.discard };
 }
 
 function slotRects(imageData) {
@@ -1822,6 +2141,8 @@ function classifyScoreDigit(features) {
 
   if (top > middleY * 2 && top > bottom * 2 && lowerLeft < upperRight * 0.45) return "7";
   if (middleY > top * 0.85 && middleY > bottom * 1.2 && upperLeft > lowerLeft * 1.4) return "4";
+  if (right > left * 1.4 && bottom >= top * 0.6) return "3";
+  if (left > right * 1.2 && bottom >= top * 0.6) return "5";
 
   const expected = {
     "2": [1, 1, 1, 0, 1, 1, 0],
@@ -1845,8 +2166,6 @@ function classifyScoreDigit(features) {
     .sort((a, b) => a.distance - b.distance)[0];
 
   if (best?.distance <= 2) return best.digit;
-  if (right > left * 1.4 && bottom >= top * 0.6) return "3";
-  if (left > right * 1.2 && bottom >= top * 0.6) return "5";
   return null;
 }
 
@@ -2029,7 +2348,7 @@ function displayedScoreRects(imageData, rects) {
   };
 }
 
-function recognizeDisplayedScore(imageData, rects) {
+function recognizeDisplayedScore(imageData, rects, options = {}) {
   const { hand: handRect, total: totalRect } = displayedScoreRects(imageData, rects);
   const handReads = SCORE_CONTRAST_THRESHOLDS.map((contrastThreshold) =>
     readHandCountFromBoxes(
@@ -2051,7 +2370,7 @@ function recognizeDisplayedScore(imageData, rects) {
     ),
   ).map((total) => {
     if (total === null) return null;
-    return Number.isFinite(handCount)
+    return Number.isFinite(handCount) && options.validatePayout !== false
       ? isPayoutFeasibleForHandCount(total, handCount)
         ? total
         : null
@@ -2064,6 +2383,243 @@ function recognizeDisplayedScore(imageData, rects) {
     // engines. Require a unique repeated result; tied values are untrusted.
     total: consensusValue(totalReads, 2),
   };
+}
+
+function proDisplayedScoreRects(imageData, rects) {
+  const gridRight = Math.max(...rects.grid.map((rect) => rect.right));
+  const gridTop = Math.min(...rects.grid.map((rect) => rect.top));
+  const cardWidth = median(rects.grid.map(rectWidth));
+  const cardHeight = median(rects.grid.map(rectHeight));
+  return {
+    hand: clampRect(
+      {
+        left: gridRight - cardWidth * 0.84,
+        top: gridTop - cardHeight * 0.46,
+        right: gridRight - cardWidth * 0.54,
+        bottom: gridTop - cardHeight * 0.27,
+      },
+      imageData.width,
+      imageData.height,
+    ),
+    total: clampRect(
+      {
+        left: gridRight - cardWidth * 0.84,
+        top: gridTop - cardHeight * 0.3,
+        right: gridRight + cardWidth * 0.1,
+        bottom: gridTop - cardHeight * 0.12,
+      },
+      imageData.width,
+      imageData.height,
+    ),
+  };
+}
+
+function neutralTextPoints(imageData, rect, luminanceThreshold) {
+  const points = [];
+  for (let y = rect.top; y < rect.bottom; y += 1) {
+    for (let x = rect.left; x < rect.right; x += 1) {
+      const color = pixelAt(imageData, x, y);
+      const luminance = (color[0] + color[1] + color[2]) / 3;
+      if (luminance < luminanceThreshold && colorChroma(color) < 35) {
+        points.push([x - rect.left, y - rect.top]);
+      }
+    }
+  }
+  return points;
+}
+
+function scoreRectHasDarkBackground(imageData, rect) {
+  const inset = Math.max(
+    1,
+    Math.min(6, Math.floor(Math.min(rectWidth(rect), rectHeight(rect)) * 0.08)),
+  );
+  const xPositions = [
+    rect.left + inset,
+    (rect.left + rect.right) / 2,
+    rect.right - inset - 1,
+  ].map(Math.round);
+  const yPositions = [
+    rect.top + inset,
+    rect.top + rectHeight(rect) * 0.22,
+    rect.bottom - inset - 1,
+  ].map(Math.round);
+  const luminances = [];
+
+  xPositions.forEach((x) => {
+    [yPositions[0], yPositions[2]].forEach((y) => {
+      const color = pixelAt(imageData, x, y);
+      luminances.push((color[0] + color[1] + color[2]) / 3);
+    });
+  });
+  yPositions.forEach((y) => {
+    [xPositions[0], xPositions[2]].forEach((x) => {
+      const color = pixelAt(imageData, x, y);
+      luminances.push((color[0] + color[1] + color[2]) / 3);
+    });
+  });
+
+  return median(luminances) < 128;
+}
+
+function classifyProScoreDigit(box) {
+  const features = scoreDigitFeatures(box);
+  const template = classifyScoreGlyph(box);
+  const structural = classifyScoreDigit(features);
+  // The shared template corpus does not yet contain 3 or 6. Prefer the
+  // structural read for those two shapes instead of snapping them to 8.
+  if (structural === "3" || structural === "6") return structural;
+  if (features.holes.length === 0 && structural) return structural;
+  return template ?? structural;
+}
+
+function selectProDisplayedScoreTotal(candidates, handCount) {
+  const finiteCandidates = candidates.filter(Number.isFinite);
+  if (!finiteCandidates.length) return null;
+  if (Number.isInteger(handCount)) {
+    const feasible = finiteCandidates.find((total) =>
+      isProDisplayedScorePairFeasible(total, handCount),
+    );
+    if (Number.isFinite(feasible)) return feasible;
+  }
+  return finiteCandidates[0];
+}
+
+function readProScoreTotalFromBoxes(boxes, handCount = null) {
+  const tallest = Math.max(0, ...boxes.map((box) => box.bottom - box.top));
+  const glyphBoxes = boxes
+    .filter(
+      (box) =>
+        box.bottom - box.top >= Math.max(7, tallest * 0.55) &&
+        box.right - box.left >= 3,
+    )
+    .sort((first, second) => first.left - second.left);
+  // The dollar sign normally occupies one full-height component, but JPEG
+  // ringing can split it into two. Decode both plausible starts and use the
+  // separately recognized hand count to reject an impossible extra leading 1.
+  const candidates = [1, 2].map((leadingGlyphCount) => {
+    const digits = glyphBoxes.slice(leadingGlyphCount).map(classifyProScoreDigit);
+    if (!digits.length || digits.some((digit) => !digit)) return null;
+    const text = digits.join("");
+    if (!/^\d{3,6}$/.test(text)) return null;
+    const value = Number(text);
+    return Number.isFinite(value) && value <= MAX_PRO_DISPLAYED_SCORE_TOTAL ? value : null;
+  });
+  return selectProDisplayedScoreTotal(candidates, handCount);
+}
+
+function readProHandCountFromBoxes(boxes, preferStructural = false) {
+  const digits = boxes
+    .filter((box) => {
+      const width = box.right - box.left;
+      const height = box.bottom - box.top;
+      const occupancy = (box.points?.length ?? box.size ?? 0) / Math.max(1, width * height);
+      return height >= 7 && occupancy < 0.92;
+    })
+    .sort((first, second) => first.left - second.left)
+    .map((box) =>
+      preferStructural
+        ? classifyProScoreDigit(box)
+        : classifyScoreGlyph(box),
+    )
+    .filter(Boolean)
+    .join("");
+  if (!/^\d{1,2}$/.test(digits)) return null;
+  const value = Number(digits);
+  return value >= 0 && value <= 12 ? value : null;
+}
+
+function isProDisplayedScorePairFeasible(total, handCount) {
+  if (
+    !Number.isFinite(total) ||
+    !Number.isInteger(handCount) ||
+    handCount < 0 ||
+    handCount > 12
+  ) {
+    return false;
+  }
+  if (handCount === 0) return total === 0;
+
+  const multiplier = proMultiplierForHandCount(handCount);
+  // Every scoring hand is worth at least a pair ($5), and every Pro hand
+  // value is a multiple of $5. The maximum regular hand is $450; the corner
+  // hand can contribute one extra $450 through its ×2 bonus. At 12 hands the
+  // discard is necessarily active and can contribute up to $1,350 through ×3.
+  const minimum = handCount * 5 * multiplier;
+  const maximum =
+    handCount === 12
+      ? (10 * 450 + 2 * 450 + 3 * 450) * multiplier
+      : (handCount * 450 + 450) * multiplier;
+  return (
+    total >= minimum &&
+    total <= maximum &&
+    total % (5 * multiplier) === 0
+  );
+}
+
+function recognizeProDisplayedScore(imageData, rects) {
+  const scoreRects = proDisplayedScoreRects(imageData, rects);
+  const darkScoreTheme = scoreRectHasDarkBackground(imageData, scoreRects.hand);
+  const handThresholds = darkScoreTheme
+    ? SCORE_CONTRAST_THRESHOLDS
+    : [170, 180, 190];
+  const totalThresholds = darkScoreTheme
+    ? SCORE_CONTRAST_THRESHOLDS
+    : [100, 120, 140, 160];
+  const foregroundPoints = darkScoreTheme
+    ? scoreForegroundMask
+    : neutralTextPoints;
+  const handReads = handThresholds.map((threshold) =>
+    readProHandCountFromBoxes(
+      textComponentBoxes(
+        foregroundPoints(imageData, scoreRects.hand, threshold),
+        rectWidth(scoreRects.hand),
+        rectHeight(scoreRects.hand),
+      ),
+      darkScoreTheme,
+    ),
+  );
+  let handCount = consensusValue(handReads, 2);
+  const totalReads = totalThresholds.map((threshold) =>
+    readProScoreTotalFromBoxes(
+      textComponentBoxes(
+        foregroundPoints(imageData, scoreRects.total, threshold),
+        rectWidth(scoreRects.total),
+        rectHeight(scoreRects.total),
+      ),
+      handCount,
+    ),
+  );
+  const consensusTotal = consensusValue(totalReads, 2);
+  const feasibleTotals = [
+    ...new Set(
+      totalReads.filter(
+        (candidate) =>
+          Number.isInteger(handCount) &&
+          isProDisplayedScorePairFeasible(candidate, handCount),
+      ),
+    ),
+  ].sort((first, second) => second - first);
+  // Threshold masks are correlated, so a repeated but arithmetically
+  // impossible partial read must not outweigh the sole complete payout.
+  const total =
+    Number.isFinite(consensusTotal) &&
+    (!Number.isInteger(handCount) ||
+      isProDisplayedScorePairFeasible(consensusTotal, handCount))
+      ? consensusTotal
+      : feasibleTotals.length
+        ? feasibleTotals[0]
+        : consensusTotal;
+  if (
+    Number.isFinite(total) &&
+    Number.isFinite(handCount) &&
+    !isProDisplayedScorePairFeasible(total, handCount)
+  ) {
+    // The score total uses a longer, more distinctive glyph sequence than the
+    // one- or two-digit hand count. Keep the total as a checksum, but discard
+    // an impossible hand-count read rather than letting it block a valid board.
+    handCount = null;
+  }
+  return { handCount, total };
 }
 
 function loadObjectUrlImage(file) {
@@ -2118,6 +2674,353 @@ async function loadImageSource(file) {
   }
 }
 
+function proJokerColorClusterCount(imageData, rect) {
+  const colors = [];
+  const top = Math.max(0, rect.top);
+  const bottom = Math.min(imageData.height, Math.round(rect.top + rectHeight(rect) * 0.32));
+  const left = Math.max(0, rect.left);
+  const right = Math.min(imageData.width, rect.right);
+  for (let y = top; y < bottom; y += 2) {
+    for (let x = left; x < right; x += 2) {
+      const color = pixelAt(imageData, x, y);
+      if (Math.max(...color) < 70 || colorChroma(color) < 25) continue;
+      colors.push(color);
+    }
+  }
+
+  const clusters = [];
+  colors
+    .sort((first, second) => colorChroma(second) - colorChroma(first))
+    .forEach((color) => {
+      const existing = clusters.find(
+        (cluster) => colorVectorDistance(color, cluster.centroid) < 42,
+      );
+      if (existing) {
+        existing.colors.push(color);
+        existing.centroid = meanColor(existing.colors);
+      } else {
+        clusters.push({ centroid: [...color], colors: [color] });
+      }
+    });
+  const minimumSize = Math.max(3, colors.length * 0.025);
+  return clusters.filter((cluster) => cluster.colors.length >= minimumSize).length;
+}
+
+function proJokerSlotIndex(imageData, rects, slots) {
+  const colorScores = rects.map((rect) => proJokerColorClusterCount(imageData, rect));
+  const bestColorScore = Math.max(...colorScores);
+  if (bestColorScore >= 3) return colorScores.indexOf(bestColorScore);
+
+  return slots
+    .map((slot, index) => ({
+      index,
+      confidence: (slot.rankConfidence ?? 0) + (slot.suitConfidence ?? 0),
+    }))
+    .sort((first, second) => first.confidence - second.confidence)[0]?.index ?? 0;
+}
+
+function assertProScreenshotDimensions(width, height) {
+  if (!width || !height || height < 240) {
+    throw new Error("This does not look like a Pile-Up Poker Pro screenshot.");
+  }
+  if (width < MIN_PRO_SCREENSHOT_WIDTH) {
+    throw new Error(
+      `Use the original full-resolution Pro screenshot (at least ${MIN_PRO_SCREENSHOT_WIDTH}px wide).`,
+    );
+  }
+}
+
+export function proDisplayedScoreMismatch(actual, expected) {
+  if (
+    !expected ||
+    (!Number.isFinite(expected.total) && !Number.isFinite(expected.handCount))
+  ) {
+    return null;
+  }
+  // The total is a longer and substantially more reliable OCR target than
+  // the one- or two-digit hand count. Use the hand count only as a fallback
+  // checksum when no trusted total was read.
+  const totalIsTrusted = Number.isFinite(expected.total);
+  const totalMismatch =
+    totalIsTrusted && expected.total !== actual.total;
+  const handCountMismatch =
+    !totalIsTrusted &&
+    Number.isFinite(expected.handCount) &&
+    expected.handCount !== actual.handCount;
+  return totalMismatch || handCountMismatch
+    ? {
+        actual,
+        expected,
+        handCountMismatch,
+        totalMismatch,
+      }
+    : null;
+}
+
+function proRecognizedScoreMismatch(grid, discard, expected) {
+  return proDisplayedScoreMismatch(
+    scoreProPlacement(grid, discard),
+    expected,
+  );
+}
+
+function displayedScoreConfirmsPlacement(actual, displayedScore) {
+  return (
+    Number.isFinite(displayedScore?.total) &&
+    Number.isFinite(actual?.total) &&
+    displayedScore.total === actual.total &&
+    (!Number.isFinite(displayedScore.handCount) ||
+      displayedScore.handCount === actual.handCount)
+  );
+}
+
+function scoreDisambiguatesSlot(
+  cards,
+  index,
+  availableDeck,
+  scoreCards,
+  displayedScore,
+) {
+  const usedCards = new Set(cards);
+  return availableDeck.every((card) => {
+    if (card.id === cards[index] || usedCards.has(card.id)) return true;
+    const alternativeCards = [...cards];
+    alternativeCards[index] = card.id;
+    return !displayedScoreConfirmsPlacement(
+      scoreCards(alternativeCards),
+      displayedScore,
+    );
+  });
+}
+
+function proScoreMatchesExpected(score, expected) {
+  return !proDisplayedScoreMismatch(score, expected);
+}
+
+function flagProScoreMismatchSlots(
+  allSlots,
+  reviewFlags,
+  jokerIndex,
+  displayedScore,
+) {
+  const cards = allSlots.map((slot) => slot.cardId);
+  const correctionIndices = new Set();
+  function collectCorrections(candidatesForSlot) {
+    allSlots.forEach((slot, index) => {
+      if (index === jokerIndex) return;
+      candidatesForSlot(slot).forEach((alternative) => {
+        if (
+          !alternative.cardId ||
+          alternative.cardId === slot.cardId ||
+          cards.some(
+            (cardId, cardIndex) =>
+              cardIndex !== index && cardId === alternative.cardId,
+          )
+        ) {
+          return;
+        }
+        const candidateCards = [...cards];
+        candidateCards[index] = alternative.cardId;
+        const score = scoreProPlacement(
+          candidateCards.slice(0, 25),
+          candidateCards.slice(25, 30),
+        );
+        if (proScoreMatchesExpected(score, displayedScore)) {
+          correctionIndices.add(index);
+        }
+      });
+    });
+  }
+
+  collectCorrections((slot) => slot.alternatives ?? []);
+  if (!correctionIndices.size) {
+    // The visual candidate list is deliberately short. If it does not expose
+    // a checksum-restoring correction, try the remaining same-suit cards.
+    // Suit glyphs are substantially more stable than rank glyphs under dark
+    // screenshots, so this remains a focused review hint rather than marking
+    // the whole board.
+    collectCorrections((slot) =>
+      PRO_STANDARD_DECK
+        .filter((card) => card.suit === slot.suit)
+        .map((card) => ({ cardId: card.id })),
+    );
+  }
+  if (correctionIndices.size) {
+    correctionIndices.forEach((index) => {
+      reviewFlags[index] = true;
+    });
+    return;
+  }
+
+  const uncertain = allSlots
+    .map((slot, index) => ({
+      index,
+      // A close rank match is the most common checksum-breaking error. Suit
+      // and aggregate confidence break ties without pretending the checksum
+      // can identify one specific card by itself.
+      uncertainty:
+        (slot.rankMargin ?? 0) * 4 +
+        (slot.suitMargin ?? 0) +
+        slot.confidence,
+    }))
+    .filter(({ index }) => index !== jokerIndex)
+    .sort((first, second) => first.uncertainty - second.uncertainty);
+
+  uncertain.slice(0, 3).forEach(({ index }) => {
+    reviewFlags[index] = true;
+  });
+}
+
+export function recognizeProFantasylandImageData(imageData) {
+  assertProScreenshotDimensions(imageData?.width, imageData?.height);
+  const fallbackRects = proFallbackSlotRects(imageData.width, imageData.height);
+  const alignedRects = alignProFallbackRects(imageData, fallbackRects);
+  const rects = {
+    ...alignedRects,
+    discard: refineDiscardRects(
+      imageData,
+      alignedRects.discard,
+      5,
+      recognizeProSlot,
+      0.52,
+    ),
+  };
+  const displayedScore = recognizeProDisplayedScore(imageData, rects);
+  const gridSlots = rects.grid.map((rect) => recognizeProSlot(imageData, rect, "grid"));
+  const discardSlots = rects.discard.map((rect) => recognizeProSlot(imageData, rect, "discard"));
+  const allRects = [...rects.grid, ...rects.discard];
+  const allSlots = [...gridSlots, ...discardSlots];
+  const jokerIndex = proJokerSlotIndex(imageData, allRects, allSlots);
+  const standardSlots = allSlots.filter((_, index) => index !== jokerIndex);
+
+  calibrateSuitsFromScreenshotColors(standardSlots);
+  const preConstraintCards = allSlots.map((slot) => slot.cardId);
+  const rawRecognizedCards = standardSlots.map((slot) => slot.cardId).filter(Boolean);
+  const rawConflicts = new Set(rawRecognizedCards).size !== rawRecognizedCards.length;
+  resolveDeckConflicts(standardSlots);
+  enforceDeckConstraints(standardSlots);
+
+  allSlots[jokerIndex] = {
+    cardId: "JK",
+    rank: "JOKER",
+    suit: null,
+    confidence: 1,
+    rankConfidence: 1,
+    suitConfidence: 1,
+    alternatives: [],
+  };
+
+  const cards = allSlots.map((slot) => slot.cardId);
+  const recognizedCards = cards.filter(Boolean);
+  const missing = recognizedCards.length !== 30;
+  const duplicates = new Set(recognizedCards).size !== recognizedCards.length;
+  const confidence = Math.min(...allSlots.map((slot) => slot.confidence));
+  const grid = allSlots.slice(0, 25).map((slot) => slot.cardId);
+  const discard = allSlots.slice(25, 30).map((slot) => slot.cardId);
+  const placementScore =
+    !missing && !duplicates
+      ? scoreProPlacement(grid, discard)
+      : null;
+  const scoreValidated = displayedScoreConfirmsPlacement(
+    placementScore,
+    displayedScore,
+  );
+  const deckAdjusted = allSlots.some(
+    (slot, index) =>
+      index !== jokerIndex &&
+      preConstraintCards[index] !== slot.cardId,
+  );
+  const canUseScoreToResolveReviews = scoreValidated;
+  const visualReviewFlags = allSlots.map(
+    (slot, index) =>
+      index !== jokerIndex &&
+      (slot.confidence < 0.6 || (slot.rankMargin ?? 0) < 0.02),
+  );
+  const deckAdjustedFlags = allSlots.map(
+    (slot, index) =>
+      index !== jokerIndex &&
+      preConstraintCards[index] !== slot.cardId,
+  );
+  const reviewCandidateFlags = visualReviewFlags.map(
+    (needsVisualReview, index) =>
+      needsVisualReview ||
+      (deckAdjustedFlags[index] && !scoreValidated),
+  );
+  const scoreResolvedReviewFlags = reviewCandidateFlags.map(
+    (needsReview, index) =>
+      needsReview &&
+      canUseScoreToResolveReviews &&
+      scoreDisambiguatesSlot(
+        cards,
+        index,
+        PRO_STANDARD_DECK,
+        (candidateCards) =>
+          scoreProPlacement(
+            candidateCards.slice(0, 25),
+            candidateCards.slice(25, 30),
+          ),
+        displayedScore,
+      ),
+  );
+  const unresolvedLowConfidence = reviewCandidateFlags.some(
+    (needsReview, index) =>
+      needsReview && !scoreResolvedReviewFlags[index],
+  );
+  const reviewFlags = allSlots.map(
+    (slot, index) =>
+      index !== jokerIndex &&
+      (!slot.cardId ||
+        (reviewCandidateFlags[index] && !scoreResolvedReviewFlags[index])),
+  );
+  const scoreMismatch =
+    !missing && !duplicates
+      ? proRecognizedScoreMismatch(grid, discard, displayedScore)
+      : null;
+  if (scoreMismatch) {
+    flagProScoreMismatchSlots(
+      allSlots,
+      reviewFlags,
+      jokerIndex,
+      displayedScore,
+    );
+  }
+  let warning = "";
+  if (missing) {
+    warning = `${recognizedCards.length}/30 cards auto-detected. Review the highlighted slots.`;
+  } else if (duplicates) {
+    warning = "Some detected Pro cards were duplicates. Review the highlighted slots.";
+  } else if (scoreMismatch) {
+    warning =
+      "Detected Pro cards do not match the screenshot score. Review the highlighted cards.";
+  } else if (
+    (rawConflicts || deckAdjusted) &&
+    reviewFlags.some(Boolean)
+  ) {
+    warning = "Some Pro card reads needed deck validation. Review the highlighted slots.";
+  } else if (unresolvedLowConfidence) {
+    warning = "I read all 30 Pro cards, but a few need review. Check the highlighted slots.";
+  }
+
+  return {
+    grid,
+    discard,
+    review: {
+      grid: reviewFlags.slice(0, 25),
+      discard: reviewFlags.slice(25, 30),
+    },
+    confidenceBySlot: {
+      grid: allSlots.slice(0, 25).map((slot) => slot.confidence),
+      discard: allSlots.slice(25, 30).map((slot) => slot.confidence),
+    },
+    confidence,
+    displayedScore,
+    scoreValidated,
+    scoreMismatch,
+    complete: !warning,
+    warning,
+  };
+}
+
 export function recognizedScoreMismatch(recognized) {
   if (!recognized?.displayedScore) return null;
   const cards = [...(recognized.grid ?? []), ...(recognized.discard ?? [])];
@@ -2125,13 +3028,20 @@ export function recognizedScoreMismatch(recognized) {
 
   const actual = scorePlacement(recognized.grid, recognized.discard);
   const expected = recognized.displayedScore;
+  const totalIsFeasible = isPayoutFeasibleTotal(expected.total);
+  const totalMatchesActual =
+    totalIsFeasible && expected.total === actual.total;
+  const displayedPairIsFeasible =
+    !Number.isFinite(expected.handCount) ||
+    isPayoutFeasibleForHandCount(expected.total, expected.handCount);
   const totalIsTrusted =
-    isPayoutFeasibleTotal(expected.total) &&
-    (!Number.isFinite(expected.handCount) ||
-      isPayoutFeasibleForHandCount(expected.total, expected.handCount));
+    totalIsFeasible && (displayedPairIsFeasible || totalMatchesActual);
   const totalMismatch =
     totalIsTrusted && expected.total !== actual.total;
-  const handCountMismatch = Number.isFinite(expected.handCount) && expected.handCount !== actual.handCount;
+  const handCountMismatch =
+    !totalIsTrusted &&
+    Number.isFinite(expected.handCount) &&
+    expected.handCount !== actual.handCount;
   return totalMismatch || handCountMismatch
     ? {
         actual,
@@ -2152,6 +3062,7 @@ export function recognizeFantasylandImageData(imageData) {
   );
   const allSlots = [...gridSlots, ...discardSlots];
   calibrateSuitsFromScreenshotColors(allSlots);
+  const preConstraintCards = allSlots.map((slot) => slot.cardId);
   const rawRecognizedCards = allSlots.map((slot) => slot.cardId).filter(Boolean);
   const rawConflicts = new Set(rawRecognizedCards).size !== rawRecognizedCards.length;
   resolveDeckConflicts(allSlots);
@@ -2162,23 +3073,75 @@ export function recognizeFantasylandImageData(imageData) {
   const missing = recognizedCards.length !== 20;
   const duplicates = new Set(recognizedCards).size !== recognizedCards.length;
   const confidence = Math.min(...allSlots.map((slot) => slot.confidence));
-  const unresolvedLowConfidence = allSlots.some((slot) => slot.confidence < 0.6);
+  const grid = gridSlots.map((slot) => slot.cardId);
+  const discard = discardSlots.map((slot) => slot.cardId);
+  const placementScore =
+    !missing && !duplicates
+      ? scorePlacement(grid, discard)
+      : null;
+  const scoreValidated = displayedScoreConfirmsPlacement(
+    placementScore,
+    displayedScore,
+  );
+  const deckAdjusted = allSlots.some(
+    (slot, index) => preConstraintCards[index] !== slot.cardId,
+  );
+  const canUseScoreToResolveReviews =
+    scoreValidated && !rawConflicts && !deckAdjusted;
+  const visualReviewFlags = allSlots.map(
+    (slot) => slot.confidence < 0.6,
+  );
+  const scoreResolvedReviewFlags = visualReviewFlags.map(
+    (needsVisualReview, index) =>
+      needsVisualReview &&
+      canUseScoreToResolveReviews &&
+      scoreDisambiguatesSlot(
+        cards,
+        index,
+        DECK,
+        (candidateCards) =>
+          scorePlacement(
+            candidateCards.slice(0, 16),
+            candidateCards.slice(16, 20),
+          ),
+        displayedScore,
+      ),
+  );
+  const unresolvedLowConfidence = visualReviewFlags.some(
+    (needsVisualReview, index) =>
+      needsVisualReview && !scoreResolvedReviewFlags[index],
+  );
+  const reviewFlags = allSlots.map(
+    (slot, index) =>
+      !slot.cardId ||
+      (visualReviewFlags[index] && !scoreResolvedReviewFlags[index]) ||
+      preConstraintCards[index] !== slot.cardId,
+  );
   let warning = "";
   if (missing) {
-    warning = `${recognizedCards.length}/20 cards auto-detected from the screenshot. Please adjust the rest manually.`;
+    warning = `${recognizedCards.length}/20 cards auto-detected. Review the highlighted slots.`;
   } else if (duplicates) {
-    warning = "I read 20 cards from the screenshot, but some were duplicates. Please adjust them manually.";
-  } else if (rawConflicts) {
-    warning = "Some card reads conflicted before deck validation. Please double-check the adjusted cards.";
+    warning = "Some detected cards were duplicates. Review the highlighted slots.";
+  } else if (rawConflicts || deckAdjusted) {
+    warning = "Some card reads needed deck validation. Review the highlighted slots.";
   } else if (unresolvedLowConfidence) {
-    warning = "I read 20 cards from the screenshot, but one or more were low confidence. Please double-check them.";
+    warning = "I read all 20 cards, but a few need review. Check the highlighted slots.";
   }
 
   return {
-    grid: gridSlots.map((slot) => slot.cardId),
-    discard: discardSlots.map((slot) => slot.cardId),
+    grid,
+    discard,
+    review: {
+      grid: reviewFlags.slice(0, 16),
+      discard: reviewFlags.slice(16, 20),
+    },
+    confidenceBySlot: {
+      grid: gridSlots.map((slot) => slot.confidence),
+      discard: discardSlots.map((slot) => slot.confidence),
+    },
     confidence,
     displayedScore,
+    scoreValidated,
     complete: !warning,
     warning,
   };
@@ -2203,11 +3166,58 @@ export async function recognizeFantasylandScreenshot(file) {
   return recognizeFantasylandImageData(context.getImageData(0, 0, width, height));
 }
 
+export async function recognizeProFantasylandScreenshot(file) {
+  const bitmap = await loadImageSource(file);
+  const width = bitmap.width || bitmap.naturalWidth;
+  const height = bitmap.height || bitmap.naturalHeight;
+  assertProScreenshotDimensions(width, height);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("Screenshot reading is not available in this browser.");
+  context.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close?.();
+
+  return recognizeProFantasylandImageData(context.getImageData(0, 0, width, height));
+}
+
 export const __recognizerTestHooks = {
+  alignProFallbackRects,
+  assertProScreenshotDimensions,
+  cardTopEdgeLine,
   classifyRank,
+  classifyProScoreDigit,
+  classifyScoreGlyph,
   classifyScoreDigit,
   consensusValue,
   displayedScoreTotalFromDigits,
   displayedScoreRects,
+  recognizeDisplayedScore,
+  readHandCountFromBoxes,
+  readScoreTotalFromBoxes,
+  scoreForegroundMask,
+  scoreRectHasDarkBackground,
+  scoreDigitFeatures,
+  textComponentBoxes,
+  normalizedRankMask,
+  neutralTextPoints,
+  proFallbackSlotRects,
+  proDisplayedScoreRects,
+  recognizeProDisplayedScore,
+  readProHandCountFromBoxes,
+  readProScoreTotalFromBoxes,
+  proRecognizedScoreMismatch,
+  isProDisplayedScorePairFeasible,
+  selectProDisplayedScoreTotal,
+  proDiscardRankPoints,
+  proJokerColorClusterCount,
+  proTemplateRankCandidates,
+  rankPoints,
+  recognizeProSlot,
+  refineDiscardRects,
+  removeArtifactComponents,
+  recognizeSlot,
   resolveDeckConflicts,
 };

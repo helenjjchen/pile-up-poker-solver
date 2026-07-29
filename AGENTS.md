@@ -5,6 +5,11 @@
 Before changing layout, spacing, typography, cards, score annotations, or responsive behavior, read
 `docs/design-system.md`.
 
+Normal and Pro are two versions of the same product. Apply shared UI, accessibility, navigation, card rendering,
+input, scoring-presentation, and responsive changes to both versions wherever they are relevant. When a change is
+intentionally mode-specific, document why it applies only to that mode and verify that the shared experience remains
+consistent.
+
 Treat the documented values as product contracts, not suggestions:
 
 - Use the shared 4/8/12/16/24px spacing scale. Do not introduce nearby one-off values when a token fits.
@@ -30,5 +35,7 @@ Prefer changing a shared token or component rule over adding an ID-specific exce
 - Update `docs/design-system.md` when an intentional design decision changes.
 - Update `tests/design-contract.test.js` when a documented contract changes.
 - Run the complete test suite.
-- Review the laptop, wide-desktop, and mobile checklist in `docs/design-system.md`.
+- Review both Normal and Pro against the laptop, wide-desktop, and mobile checklist in `docs/design-system.md`.
+- Exercise shared controls and navigation in both modes. For mode-specific changes, run the unaffected mode's
+  contract checks as a regression guard.
 - Do not claim visual browser verification unless it was actually performed.

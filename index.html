@@ -4,16 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fantasyland Pile-Up Poker Solver</title>
-    <link rel="stylesheet" href="./styles.css?v=design-system-46" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css?v=design-system-57" />
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
-        <div>
+        <div class="topbar-copy">
           <p class="eyebrow">Fantasyland</p>
-          <h1>Pile-Up Poker Solver</h1>
+          <div class="topbar-title-row">
+            <h1>Pile-Up Poker Solver</h1>
+            <div class="topbar-score" id="topScore" aria-live="polite">$0</div>
+          </div>
+          <nav class="mode-switch" aria-label="Game version">
+            <a id="normalModeLink" href="./index.html" aria-current="page">Normal</a>
+            <a id="proModeLink" href="./index.html?mode=pro">Pro</a>
+          </nav>
         </div>
-        <div class="topbar-score" id="topScore" aria-live="polite">$0</div>
       </header>
 
       <section class="workspace">
@@ -45,11 +52,11 @@
             </div>
           </details>
 
-          <section class="grid-attempt-panel" aria-label="Grid attempt">
-            <div class="section-heading">
+          <details class="grid-attempt-panel" id="gridAttemptDetails" aria-label="Grid attempt" open>
+            <summary class="section-heading">
               <span>Grid Attempt</span>
               <strong id="attemptScoreBadge">Optional</strong>
-            </div>
+            </summary>
             <div class="attempt-editor">
               <div class="attempt-grid-block">
                 <span class="attempt-label">Grid</span>
@@ -64,9 +71,12 @@
               Optional baseline: add a player grid here, or upload a screenshot to fill it automatically.
             </p>
             <div class="attempt-actions">
+              <button type="button" class="secondary-button is-hidden" id="confirmAttemptReviewButton">
+                Cards Look Right
+              </button>
               <button type="button" class="secondary-button" id="clearAttemptButton">Clear Grid Attempt</button>
             </div>
-          </section>
+          </details>
 
           <div class="optimizer-controls">
             <label for="searchDepth">Search</label>
@@ -75,10 +85,10 @@
               <option value="10000">Balanced · 10s</option>
               <option value="30000" selected>Deep · 30s</option>
             </select>
-            <button type="button" class="primary-button" id="optimizeButton">Optimize</button>
+            <button type="button" class="primary-button" id="optimizeButton" disabled>Optimize</button>
           </div>
           <p class="status-line" id="statusLine" role="status" aria-live="polite">Select 20 cards.</p>
-          <div class="optimizer-timer is-hidden" id="optimizerTimer" aria-live="polite">
+          <div class="optimizer-timer is-hidden" id="optimizerTimer">
             <span class="timer-spinner" aria-hidden="true"></span>
             <strong id="optimizerTimerText">Idle</strong>
           </div>
@@ -100,7 +110,7 @@
             </div>
             <div>
               <span>Multiplier</span>
-              <strong id="resultMultiplier">x1</strong>
+              <strong id="resultMultiplier">×1</strong>
             </div>
             <div>
               <span>Quality</span>
@@ -126,7 +136,7 @@
 
           <div class="solutions-row" id="solutionsRow"></div>
 
-          <div class="bucket-panel">
+          <div class="bucket-panel mode-only mode-normal">
             <div class="panel-heading">
               <h2>Best By Hand Count</h2>
               <span>10 → 0</span>
@@ -138,42 +148,63 @@
             <summary>Solver Diagnostics</summary>
             <div class="diagnostics-content">
               <div class="runtime-info" id="runtimeInfo">Not run</div>
-              <div class="best-known-panel" id="bestKnownPanel">
-                <div>
-                  <span>Best Known For This Deal</span>
-                  <strong id="bestKnownSummary">No saved result</strong>
+              <div class="diagnostics-mode-stack mode-only mode-normal">
+                <div class="best-known-panel" id="bestKnownPanel">
+                  <div>
+                    <span>Best Known For This Deal</span>
+                    <strong id="bestKnownSummary">No saved result</strong>
+                  </div>
+                  <button type="button" class="secondary-button" id="showBestKnownButton" disabled>
+                    Show Saved Placement
+                  </button>
                 </div>
-                <button type="button" class="secondary-button" id="showBestKnownButton" disabled>
-                  Show Saved Placement
-                </button>
-              </div>
 
-              <div class="proof-panel" id="proofPanel">
-                <span>Exact Proof Status</span>
-                <strong id="proofSummary">No proof run for this deal yet</strong>
+                <div class="proof-panel" id="proofPanel">
+                  <span>Exact Proof Status</span>
+                  <strong id="proofSummary">No proof run for this deal yet</strong>
+                </div>
+              </div>
+              <div class="proof-panel mode-only mode-pro" hidden>
+                <span>Pro search status</span>
+                <strong id="searchSummary">No search run yet</strong>
               </div>
             </div>
           </details>
 
           <details class="scoring-explainer">
-            <summary>What counts as a scoring way?</summary>
-            <p>
-              The solver is trying to maximize dollars first, then preserve truly different scoring structures for tied
-              outcomes. It folds rotations/reflections of the same board, suit-only swaps when suits do not affect the
-              hand, and irrelevant kickers for pairs, trips, quads, and two pair.
-            </p>
-            <p>
-              It still shows separate ways when the same total, hand count, and quality count come from different hand
-              type mixes, such as one placement using trips plus two pair while another uses a pair plus a straight.
-              Those representatives are saved for future runs. Counts say “ways found” because proving the best score
-              does not by itself prove that every tied scoring way has been enumerated.
-            </p>
+            <summary id="scoringExplainerTitle">What counts as a scoring way?</summary>
+            <div class="mode-only mode-normal">
+              <p>
+                The solver is trying to maximize dollars first, then preserve truly different scoring structures for tied
+                outcomes. It folds rotations/reflections of the same board, suit-only swaps when suits do not affect the
+                hand, and irrelevant kickers for pairs, trips, quads, and two pair.
+              </p>
+              <p>
+                It still shows separate ways when the same total, hand count, and quality count come from different hand
+                type mixes, such as one placement using trips plus two pair while another uses a pair plus a straight.
+                Those representatives are saved for future runs. Counts say “ways found” because proving the best score
+                does not by itself prove that every tied scoring way has been enumerated.
+              </p>
+            </div>
+            <div class="mode-only mode-pro" hidden>
+              <p>
+                Pro uses five rows, five columns, and the four corners plus center. The corner hand is worth ×2.
+                Discard scores at ×3 only when all 11 grid hands score.
+              </p>
+              <p>
+                The joker independently becomes the best possible card in every hand it touches. Full houses score
+                $230. A four-of-a-kind plus joker remains four-of-a-kind; there is no five-of-a-kind hand.
+              </p>
+              <p>
+                Multipliers are ×2 at 4–5 hands, ×3 at 6–7, ×4 at 8–9, ×5 at 10–11, and ×6 only at all 12.
+              </p>
+            </div>
           </details>
 
         </section>
       </section>
     </main>
 
-    <script type="module" src="./src/app.js?v=solver-cache-39"></script>
+    <script type="module" src="./src/modeBoot.js?v=mode-shell-6"></script>
   </body>
 </html>

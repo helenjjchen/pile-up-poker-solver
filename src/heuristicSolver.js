@@ -1,6 +1,13 @@
 import { sortCardIds } from "./cards.js";
 import { solutionStructureKey } from "./layoutEquivalence.js";
-import { compareScores, scoreHand, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
+import {
+  LINE_DEFINITIONS,
+  compareScores,
+  multiplierForHandCount,
+  scoreHand,
+  scorePlacement,
+  theoreticalMaxTotalForHandCount,
+} from "./scoring.js";
 import { canonicalPlacementKey } from "./symmetry.js";
 
 function mulberry32(seed) {
@@ -31,6 +38,109 @@ function stateToPlacement(state) {
 function scoreState(state) {
   const placement = stateToPlacement(state);
   return scorePlacement(placement.grid, placement.discard);
+}
+
+function createFastStateEvaluator(cardIds) {
+  const bitByCardId = new Map(cardIds.map((cardId, index) => [cardId, 1 << index]));
+  const handStatsByMask = new Map();
+  let candidateEvaluations = 0;
+
+  for (let a = 0; a < cardIds.length - 3; a += 1) {
+    for (let b = a + 1; b < cardIds.length - 2; b += 1) {
+      for (let c = b + 1; c < cardIds.length - 1; c += 1) {
+        for (let d = c + 1; d < cardIds.length; d += 1) {
+          const cards = [cardIds[a], cardIds[b], cardIds[c], cardIds[d]];
+          const hand = scoreHand(cards);
+          const mask =
+            bitByCardId.get(cards[0]) |
+            bitByCardId.get(cards[1]) |
+            bitByCardId.get(cards[2]) |
+            bitByCardId.get(cards[3]);
+          handStatsByMask.set(mask, {
+            base: hand.base,
+            quality: hand.quality,
+          });
+        }
+      }
+    }
+  }
+
+  const statsForSlots = (state, slots) => {
+    let mask = 0;
+    for (const slot of slots) mask |= bitByCardId.get(state[slot]);
+    return handStatsByMask.get(mask);
+  };
+
+  const summarize = (lineStats, discardStats) => {
+    let gridHandCount = 0;
+    let gridBase = 0;
+    let gridQualityHandCount = 0;
+
+    for (let index = 0; index < lineStats.length; index += 1) {
+      const stats = lineStats[index];
+      if (stats.base <= 0) continue;
+      gridHandCount += 1;
+      gridBase += stats.base * LINE_DEFINITIONS[index].bonus;
+      if (stats.quality) gridQualityHandCount += 1;
+    }
+
+    const discardScores = gridHandCount === 9 && discardStats.base > 0;
+    const discardValue = discardScores ? discardStats.base * 3 : 0;
+    const handCount = gridHandCount + Number(discardScores);
+    const multiplier = multiplierForHandCount(handCount);
+    const base = gridBase + discardValue;
+
+    return {
+      total: base * multiplier,
+      base,
+      multiplier,
+      handCount,
+      qualityHandCount: gridQualityHandCount + Number(discardScores && discardStats.quality),
+      gridHandCount,
+      gridBase,
+      discardValue,
+      discardScores,
+      lineStats,
+      discardStats,
+    };
+  };
+
+  const evaluateState = (state) => {
+    candidateEvaluations += 1;
+    const lineStats = LINE_DEFINITIONS.map((line) => statsForSlots(state, line.indices));
+    const discardStats = statsForSlots(state, [16, 17, 18, 19]);
+    return summarize(lineStats, discardStats);
+  };
+
+  const lineIndexesBySlot = Array.from({ length: 20 }, () => []);
+  LINE_DEFINITIONS.forEach((line, lineIndex) => {
+    line.indices.forEach((slot) => lineIndexesBySlot[slot].push(lineIndex));
+  });
+
+  const evaluateSwap = (state, currentEvaluation, first, second) => {
+    candidateEvaluations += 1;
+    const affectedLineIndexes = new Set([
+      ...lineIndexesBySlot[first],
+      ...lineIndexesBySlot[second],
+    ]);
+    const lineStats = [...currentEvaluation.lineStats];
+    affectedLineIndexes.forEach((lineIndex) => {
+      lineStats[lineIndex] = statsForSlots(state, LINE_DEFINITIONS[lineIndex].indices);
+    });
+    const discardChanged = first >= 16 || second >= 16;
+    const discardStats = discardChanged
+      ? statsForSlots(state, [16, 17, 18, 19])
+      : currentEvaluation.discardStats;
+    return summarize(lineStats, discardStats);
+  };
+
+  return {
+    evaluateState,
+    evaluateSwap,
+    get candidateEvaluations() {
+      return candidateEvaluations;
+    },
+  };
 }
 
 function compareStateScores(a, b) {
@@ -357,10 +467,16 @@ function makeStructuredStarts(cardIds, candidates, deadlineMs = Infinity, limits
   return uniqueStates(starts);
 }
 
-function improveBySwaps(initialState, maxPasses = 90, allowedSlots = null, deadlineMs = Infinity) {
+function improveBySwaps(
+  initialState,
+  evaluator,
+  maxPasses = 90,
+  allowedSlots = null,
+  deadlineMs = Infinity,
+) {
   const state = [...initialState];
   const slots = allowedSlots ?? state.map((_, index) => index);
-  let currentScore = scoreState(state);
+  let currentScore = evaluator.evaluateState(state);
   let passes = 0;
 
   while (passes < maxPasses && performance.now() < deadlineMs) {
@@ -374,7 +490,12 @@ function improveBySwaps(initialState, maxPasses = 90, allowedSlots = null, deadl
         const first = slots[firstIndex];
         const second = slots[secondIndex];
         [state[first], state[second]] = [state[second], state[first]];
-        const candidateScore = scoreState(state);
+        const candidateScore = evaluator.evaluateSwap(
+          state,
+          currentScore,
+          first,
+          second,
+        );
         if (compareStateScores(candidateScore, bestScore) > 0) {
           bestScore = candidateScore;
           bestSwap = [first, second];
@@ -392,10 +513,17 @@ function improveBySwaps(initialState, maxPasses = 90, allowedSlots = null, deadl
   return { state, score: currentScore, passes };
 }
 
-function anneal(initialState, random, iterations, allowedSlots = null, deadlineMs = Infinity) {
+function anneal(
+  initialState,
+  evaluator,
+  random,
+  iterations,
+  allowedSlots = null,
+  deadlineMs = Infinity,
+) {
   const state = [...initialState];
   const slots = allowedSlots ?? state.map((_, index) => index);
-  let currentScore = scoreState(state);
+  let currentScore = evaluator.evaluateState(state);
   let bestState = [...state];
   let bestScore = currentScore;
 
@@ -408,7 +536,12 @@ function anneal(initialState, random, iterations, allowedSlots = null, deadlineM
     const second = slots[secondSlotIndex];
 
     [state[first], state[second]] = [state[second], state[first]];
-    const nextScore = scoreState(state);
+    const nextScore = evaluator.evaluateSwap(
+      state,
+      currentScore,
+      first,
+      second,
+    );
     const delta = nextScore.total - currentScore.total;
     const accept = delta >= 0 || Math.exp(delta / temperature) > random();
 
@@ -428,24 +561,25 @@ function anneal(initialState, random, iterations, allowedSlots = null, deadlineM
 
 function addSolution(solutions, state, score, source) {
   const placement = stateToPlacement(state);
+  const completeScore = score?.lines ? score : scoreState(state);
   const placementKey = canonicalPlacementKey(placement.grid, placement.discard);
   const solution = {
     ...placement,
-    score,
+    score: completeScore,
     source,
     key: placementKey,
     placementKey,
   };
   const structureKey = solutionStructureKey(solution);
   const existing = solutions.get(structureKey);
-  if (!existing || compareScores(score, existing.score) > 0) {
+  if (!existing || compareScores(completeScore, existing.score) > 0) {
     solutions.set(structureKey, { ...solution, structureKey });
   }
 }
 
-function rankStartStates(states) {
+function rankStartStates(states, evaluator) {
   return uniqueStates(states)
-    .map((state) => ({ state, score: scoreState(state) }))
+    .map((state) => ({ state, score: evaluator.evaluateState(state) }))
     .sort((a, b) => {
       if (a.score.handCount !== b.score.handCount) return b.score.handCount - a.score.handCount;
       return compareScores(b.score, a.score);
@@ -462,55 +596,119 @@ export function solveFantasylandHeuristic(cardIds, options = {}) {
   const deadlineMs = startedAt + timeLimitMs;
   const incumbentTotal = options.incumbentTotal ?? 0;
   const fastMode = Boolean(options.fastMode);
-  const random = mulberry32(options.seed ?? 20260701);
+  const continuationIndex =
+    Number.isFinite(Number(options.continuationIndex)) &&
+    Number(options.continuationIndex) > 0
+      ? Math.floor(Number(options.continuationIndex))
+      : 0;
+  const requestedSeed = Number(options.seed ?? 20260701) >>> 0;
+  const random = mulberry32(
+    (requestedSeed ^ Math.imul(continuationIndex, 0x9e3779b9)) >>> 0,
+  );
   const expectedDealKey = stateDealKey(cardIds);
+  const evaluator = createFastStateEvaluator(cardIds);
   const initialStates = (options.initialPlacements ?? [])
     .map((placement) => placementToState(placement, expectedDealKey))
     .filter(Boolean);
   const candidates = allCombinations4(cardIds);
   const startBuildBudgetMs = fastMode ? Math.min(2500, Math.max(500, timeLimitMs * 0.18)) : timeLimitMs;
   const startDeadlineMs = Math.min(deadlineMs, startedAt + startBuildBudgetMs);
-  const starts = rankStartStates([
-    ...initialStates,
-    ...makeStructuredStarts(
-      cardIds,
-      candidates,
-      startDeadlineMs,
-      fastMode
-        ? {
-            lineCandidateLimit: 50,
-            cornerCandidateLimit: 28,
-            discardCandidateLimit: 120,
-            cornerEdgeSpecLimit: 520,
-            topCandidateLimit: 28,
-            maxStarts: 620,
-          }
-        : {},
-    ),
-  ]);
+  const structuredStarts =
+    continuationIndex > 0
+      ? []
+      : makeStructuredStarts(
+          cardIds,
+          candidates,
+          startDeadlineMs,
+          fastMode
+            ? {
+                lineCandidateLimit: 50,
+                cornerCandidateLimit: 28,
+                discardCandidateLimit: 120,
+                cornerEdgeSpecLimit: 520,
+                topCandidateLimit: 28,
+                maxStarts: 620,
+              }
+            : {},
+        );
+  const starts = rankStartStates(
+    [
+      ...initialStates,
+      ...structuredStarts,
+      ...(initialStates.length === 0 && continuationIndex > 0
+        ? [shuffle(cardIds, random)]
+        : []),
+    ],
+    evaluator,
+  );
   const solutions = new Map();
   let attempts = 0;
   const structuredPasses = options.structuredPasses ?? (fastMode ? 70 : 90);
-  const randomAnnealIterations = options.randomAnnealIterations ?? (fastMode ? 560 : 750);
+  const randomAnnealIterations = options.randomAnnealIterations ?? (fastMode ? 3200 : 4800);
   const randomPasses = options.randomPasses ?? (fastMode ? 48 : 70);
+  const structuredDeadlineMs = Math.min(
+    deadlineMs,
+    continuationIndex > 0
+      ? startedAt
+      : startedAt + timeLimitMs * (fastMode ? 0.58 : 0.64),
+  );
+  const annealingPortfolio = [];
 
   starts.slice(0, 6).forEach((state) => {
     addSolution(solutions, state.state, state.score, "baseline");
+    annealingPortfolio.push([...state.state]);
     attempts += 1;
   });
 
   for (const start of starts) {
-    if (performance.now() >= deadlineMs) break;
-    const improved = improveBySwaps(start.state, structuredPasses, null, deadlineMs);
+    if (performance.now() >= structuredDeadlineMs) break;
+    const improved = improveBySwaps(
+      start.state,
+      evaluator,
+      structuredPasses,
+      null,
+      structuredDeadlineMs,
+    );
     addSolution(solutions, improved.state, improved.score, "structured");
+    if (annealingPortfolio.length < 24) annealingPortfolio.push([...improved.state]);
     attempts += 1;
   }
 
   while (performance.now() < deadlineMs) {
-    const shuffled = shuffle(cardIds, random);
-    const annealed = anneal(shuffled, random, randomAnnealIterations, null, deadlineMs);
-    const improved = improveBySwaps(annealed.state, randomPasses, null, deadlineMs);
+    const portfolioRoll = random();
+    const initialState =
+      portfolioRoll < 0.45 || annealingPortfolio.length === 0
+        ? shuffle(cardIds, random)
+        : [...annealingPortfolio[Math.floor(random() * annealingPortfolio.length)]];
+    if (portfolioRoll >= 0.8) {
+      const perturbations = 3 + Math.floor(random() * 5);
+      for (let index = 0; index < perturbations; index += 1) {
+        const first = Math.floor(random() * initialState.length);
+        let second = Math.floor(random() * initialState.length);
+        if (second === first) second = (second + 1) % initialState.length;
+        [initialState[first], initialState[second]] = [
+          initialState[second],
+          initialState[first],
+        ];
+      }
+    }
+    const annealed = anneal(
+      initialState,
+      evaluator,
+      random,
+      randomAnnealIterations,
+      null,
+      deadlineMs,
+    );
+    const improved = improveBySwaps(
+      annealed.state,
+      evaluator,
+      randomPasses,
+      null,
+      deadlineMs,
+    );
     addSolution(solutions, improved.state, improved.score, "random");
+    if (annealingPortfolio.length < 36) annealingPortfolio.push([...improved.state]);
     attempts += 1;
   }
 
@@ -545,10 +743,18 @@ export function solveFantasylandHeuristic(cardIds, options = {}) {
     solutions: ranked.slice(0, options.maxSolutions ?? 24),
     bestByHandCount,
     attempts,
+    candidateEvaluations: evaluator.candidateEvaluations,
     elapsedMs: performance.now() - startedAt,
     candidateCount: candidates.length,
     incumbentTotal,
+    continuationIndex,
     searchOrder:
-      "Starts are ranked by hand count, final ranking uses actual money, and bucket upper bounds mark buckets that cannot beat the incumbent.",
+      continuationIndex > 0
+        ? "A continuation pass keeps prior leaders, skips the already-run structural opening, and follows fresh annealing trajectories; final ranking still uses actual money."
+        : "A mixed portfolio reserves time for structured starts and longer annealing trajectories; fast incremental line scoring lets the search evaluate more placements while final ranking still uses actual money.",
   };
 }
+
+export const __heuristicTestHooks = {
+  createFastStateEvaluator,
+};
