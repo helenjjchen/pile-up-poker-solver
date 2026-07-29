@@ -27,7 +27,7 @@ Shared product contracts:
 - one screenshot-import and correction flow;
 - one advisory recognition model: uncertainty never disables Optimize for a valid deal;
 - one result-grouping model, including a protected “Your grid” result;
-- Deep (`30s`) as the default, with Quick (`3s`) and Balanced (`10s`) alternatives;
+- Deep as the default (`30s` Normal, `45s` Pro), with Quick (`3s`) and Balanced (`10s`) alternatives;
 - same-deal repeat runs retain leaders and use a new continuation stream.
 
 Visual details and viewport checks are normative in [design-system.md](./design-system.md).
@@ -113,6 +113,8 @@ requested deal.
 - Cache hand evaluations and, after a swap, rescore only touched rows, columns, corner, or discard.
 - Combine greedy refinement with longer annealing trajectories that can cross temporarily worse states.
 - Keep structurally distinct leaders and stream improving incumbents to the UI.
+- Interleave unused structural starts with fresh, coordinated perturbations of the current leader so a first pass
+  exploits a strong basin without abandoning the deal-wide portfolio.
 - On repeat Optimize clicks, reuse prior leaders, skip the already-completed deterministic opening, perturb elites,
   and advance a deal-specific continuation seed.
 

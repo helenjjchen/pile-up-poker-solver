@@ -31,6 +31,7 @@ const selectedCount = document.querySelector("#selectedCount");
 const manualPickerHint = document.querySelector("#manualPickerHint");
 const statusLine = document.querySelector("#statusLine");
 const scoringExplainerTitle = document.querySelector("#scoringExplainerTitle");
+const deepSearchOption = document.querySelector("#deepSearchOption");
 
 pickerPanel.setAttribute("aria-label", isPro ? "Pro deal card picker" : "Deal card picker");
 resultPanel.setAttribute("aria-label", isPro ? "Pro optimizer result" : "Optimizer result");
@@ -45,9 +46,11 @@ statusLine.textContent = isPro ? "Select 29 more cards." : "Select 20 cards.";
 scoringExplainerTitle.textContent = isPro
   ? "Pro rules and scoring"
   : "What counts as a scoring way?";
+deepSearchOption.value = isPro ? "45000" : "30000";
+deepSearchOption.textContent = isPro ? "Deep · 45s" : "Deep · 30s";
 
 await import(
   isPro
-    ? "./proApp.js?v=pro-solver-16"
+    ? "./proApp.js?v=pro-solver-17"
     : "./app.js?v=solver-cache-49"
 );

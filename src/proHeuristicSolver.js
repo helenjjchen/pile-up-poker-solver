@@ -1201,7 +1201,8 @@ function exhaustiveSuitRowStates(cardIds, discardCandidates) {
 function qualityRowStructuredStates(cardIds, discardCandidates) {
   const structures = [];
   for (const discard of discardCandidates) {
-    if (scoreProHand(discard).key !== "straight-flush") continue;
+    const discardHand = scoreProHand(discard);
+    if (discardHand.key !== "straight-flush") continue;
     const discarded = new Set(discard);
     const boardCards = cardIds.filter((cardId) => !discarded.has(cardId));
     const rowHands = strongDiscardCandidates(boardCards).filter(
@@ -1236,7 +1237,7 @@ function qualityRowStructuredStates(cardIds, discardCandidates) {
           qualityRows: [rowHands[first], rowHands[second]],
           remaining,
           value:
-            scoreProHand(discard).base * 3 +
+            discardHand.base * 3 +
             scoreProHand(rowHands[first]).base +
             scoreProHand(rowHands[second]).base +
             boardCrossStructureValue(remaining) +
@@ -2306,14 +2307,32 @@ function validProDeal(cardIds) {
   );
 }
 
+function perturbLeader(solution, random) {
+  const state = [...solution.grid, ...solution.discard];
+  const swapCount = 2 + Math.floor(random() * 7);
+  for (let swap = 0; swap < swapCount; swap += 1) {
+    const first = Math.floor(random() * state.length);
+    let second = Math.floor(random() * state.length);
+    if (second === first) second = (second + 1) % state.length;
+    [state[first], state[second]] = [state[second], state[first]];
+  }
+  return state;
+}
+
 function startRestart(session) {
-  const seed = session.starts[session.startIndex]
-    ? [...session.starts[session.startIndex]]
-    : shuffle(
-        session.best ? [...session.best.grid, ...session.best.discard] : session.cardIds,
-        session.random,
-      );
-  session.startIndex += 1;
+  const revisitLeader =
+    session.best &&
+    session.restartCount > 0 &&
+    session.restartCount % session.leaderRestartInterval === 0;
+  const structuredSeed = session.starts[session.startIndex];
+  const seed = revisitLeader
+    ? perturbLeader(session.best, session.random)
+    : structuredSeed
+      ? [...structuredSeed]
+      : perturbLeader(session.best, session.random);
+  if (revisitLeader) session.leaderRestartCount += 1;
+  if (!revisitLeader && structuredSeed) session.startIndex += 1;
+  session.restartCount += 1;
   session.currentState = seed;
   session.current = stateToSolution(seed);
   session.currentEvaluation = fastStateEvaluation(
@@ -2577,6 +2596,12 @@ export function createProHeuristicSession(cardIds, options = {}) {
     bestSolutions,
     best,
     startIndex: 0,
+    restartCount: 0,
+    leaderRestartCount: 0,
+    leaderRestartInterval:
+      maxAnnealingAttempts !== null && maxAnnealingAttempts <= 60_000
+        ? Number.POSITIVE_INFINITY
+        : 4,
     currentState: null,
     current: null,
     currentEvaluation: null,
@@ -2732,6 +2757,7 @@ export function finishProHeuristicSession(session) {
     refinementAttempts: session.refinementAttempts,
     refinementPasses: session.refinementPasses,
     refinementExhausted: session.refinementExhausted,
+    leaderRestartCount: session.leaderRestartCount,
     continuationIndex: session.continuationIndex,
     exact: false,
     searchOrder:

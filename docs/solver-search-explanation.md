@@ -471,7 +471,11 @@ Pro currently uses a best-found anytime search:
 5. Split the budget between structured refinement and longer annealing lanes.
    Random restarts remain active so rank-heavy or four-suit structures are never
    treated as universally optimal.
-6. Refine multiple distinct leaders at the end, then group equivalent outcomes
+6. After every few structural restarts, perturb the current best board and
+   launch an independent trajectory from it. This brings the useful behavior
+   of a later continuation pass into the first run without abandoning unused
+   structural families.
+7. Refine multiple distinct leaders at the end, then group equivalent outcomes
    before rendering result pills.
 
 The worker runs this search in short cooperative slices and streams a result only
@@ -490,6 +494,8 @@ The current regression portfolio is deliberately varied:
 - a `$25,560` suit/sequence-heavy board;
 - a mixed rank/suit deal that must reach at least `$25,140`;
 - a `$22,200` structural benchmark;
+- the mixed screenshot board whose uploaded `$22,260` layout now has a
+  first-pass regression target above `$22,980`;
 - two earlier reference boards;
 - a low-scoring uploaded board used to test that search can escape a weak player
   layout.

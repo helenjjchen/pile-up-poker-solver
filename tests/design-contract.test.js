@@ -77,7 +77,10 @@ assert.match(html, /id="proModeLink" href="\.\/index\.html\?mode=pro"/);
 assert.match(proHtml, /window\.location\.replace\("\.\/index\.html\?mode=pro"\)/);
 assert.doesNotMatch(proHtml, /class="topbar"/);
 assert.match(html, /<details class="grid-attempt-panel" id="gridAttemptDetails"[\s\S]*?<summary/);
-assert.match(html, /<option value="30000" selected>Deep · 30s<\/option>/);
+assert.match(
+  html,
+  /<option id="deepSearchOption" value="30000" selected>Deep · 30s<\/option>/,
+);
 assert.match(
   css,
   /@media \(max-width:\s*460px\)[\s\S]*?\.topbar-title-row\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
@@ -139,6 +142,11 @@ assert.doesNotMatch(
 
 const horizontalLabels = firstRuleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
+const cornerLabel = firstRuleBody("\\.corner-line");
+assert.match(
+  cornerLabel,
+  /margin:\s*var\(--space-2\) 0 0 calc\(-1 \* var\(--frame-offset\)\)/,
+);
 
 assert.match(
   css,
@@ -176,6 +184,7 @@ assert.match(
   /outer corner frame[\s\S]*do not add a separate accent outline[\s\S]*around the center card/,
 );
 assert.match(designSystem, /gameplay Joker's purple/);
+assert.match(designSystem, /corner-hand annotation reserves an `8px` top offset/);
 assert.match(designSystem, /A clean upload collapses the manual picker/);
 assert.match(designSystem, /preview compresses to a short thumbnail/);
 assert.match(designSystem, /“Cards Look Right” confirmation/);

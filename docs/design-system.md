@@ -100,6 +100,8 @@ Use these tokens before introducing a literal spacing value.
 - Pro uses the same board component with five rows, five columns, and five discard cards. The outer corner frame and
   corner-hand score annotation communicate a scoring corners-plus-center hand; do not add a separate accent outline
   around the center card.
+- The corner-hand annotation reserves an `8px` top offset before the grid in both modes. This keeps the annotation
+  visually separate from the neighboring Discard label at narrow result widths without shrinking the board.
 - Normal and Pro picker cards use identical dimensions and typography. The Pro joker occupies one ordinary deck-grid
   cell, uses the four existing suit colors at the standard corner-suit size, and shows the gameplay Joker's purple
   on its center star.
@@ -125,7 +127,8 @@ Use these tokens before introducing a literal spacing value.
 
 ## Search feedback
 
-- Both versions default to the deep `30s` search. Quick `3s` and balanced `10s` remain explicit choices.
+- Normal defaults to the deep `30s` search. Pro defaults to deep `45s` because its `30`-card anytime search space is
+  materially larger. Quick `3s` and balanced `10s` remain explicit choices in both modes.
 - Optimize is resumable for the current page session. Repeating it for the same deal keeps prior leaders, advances
   to a fresh deterministic search stream, and skips the structural opening portfolio already completed on the first
   pass. Changing modes or deals uses that deal's own history; a certified Normal optimum still loads immediately.
@@ -141,6 +144,9 @@ Use these tokens before introducing a literal spacing value.
   placement when one exists.
 - Pro is an anytime heuristic: it displays improving placements during the selected budget and lets the player stop
   early while keeping the strongest placement already found.
+- A Pro pass interleaves the structural opening portfolio with fresh perturbations of its current leader. This keeps
+  strong rank/suit/corner seeds in play while avoiding a long march through weaker starts after a better basin has
+  already been found.
 - Search timers are visual feedback, not live regions. The concise status line announces meaningful improvements and
   final outcomes without reading a sub-second timer on every update.
 

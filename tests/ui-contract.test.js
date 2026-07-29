@@ -95,10 +95,18 @@ assert.match(horizontalRules, /background:\s*var\(--accent\)/);
 const horizontalLabels = ruleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
 
-assert.match(html, /styles\.css\?v=design-system-57/);
-assert.match(html, /src\/modeBoot\.js\?v=mode-shell-6/);
+assert.match(html, /styles\.css\?v=design-system-58/);
+assert.match(html, /src\/modeBoot\.js\?v=mode-shell-8/);
 assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-49/);
-assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-16/);
+assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-17/);
+assert.match(
+  modeBoot,
+  /deepSearchOption\.value = isPro \? "45000" : "30000"/,
+);
+assert.match(
+  modeBoot,
+  /deepSearchOption\.textContent = isPro \? "Deep · 45s" : "Deep · 30s"/,
+);
 assert.match(app, /screenshotRecognizer\.js\?v=screenshot-recognizer-31/);
 assert.match(proApp, /screenshotRecognizer\.js\?v=screenshot-recognizer-31/);
 assert.match(app, /recognizerFeedback\.js\?v=recognizer-feedback-1/);

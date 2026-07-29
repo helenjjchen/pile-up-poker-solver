@@ -1116,7 +1116,7 @@ h2 {
 .corner-line {
   justify-self: start;
   min-height: 42px;
-  margin-left: calc(-1 * var(--frame-offset));
+  margin: var(--space-2) 0 0 calc(-1 * var(--frame-offset));
   padding: 2px 0 2px 27px;
 }
 

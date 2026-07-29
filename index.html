@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fantasyland Pile-Up Poker Solver</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=design-system-57" />
+    <link rel="stylesheet" href="./styles.css?v=design-system-58" />
   </head>
   <body>
     <main class="app-shell">
@@ -83,7 +83,7 @@
             <select id="searchDepth">
               <option value="3000">Quick · 3s</option>
               <option value="10000">Balanced · 10s</option>
-              <option value="30000" selected>Deep · 30s</option>
+              <option id="deepSearchOption" value="30000" selected>Deep · 30s</option>
             </select>
             <button type="button" class="primary-button" id="optimizeButton" disabled>Optimize</button>
           </div>
@@ -205,6 +205,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/modeBoot.js?v=mode-shell-6"></script>
+    <script type="module" src="./src/modeBoot.js?v=mode-shell-8"></script>
   </body>
 </html>

@@ -256,6 +256,65 @@ assert.ok(
   `Balanced Pro structural search regressed to ${structuralBenchmarkSeedTotal}`,
 );
 
+const mixedScreenshotGrid = [
+  "8C", "9D", "9S", "9H", "9C",
+  "QD", "4D", "7S", "4H", "7H",
+  "QH", "KS", "JK", "AD", "JD",
+  "3S", "KH", "JS", "5D", "5H",
+  "QC", "KC", "10S", "AC", "JC",
+];
+const mixedScreenshotDiscard = ["6C", "3C", "4C", "5C", "7C"];
+const mixedScreenshotDeal = [...mixedScreenshotGrid, ...mixedScreenshotDiscard];
+const mixedScreenshotScore = scoreProPlacement(
+  mixedScreenshotGrid,
+  mixedScreenshotDiscard,
+);
+assert.equal(mixedScreenshotScore.total, 22260);
+assert.equal(mixedScreenshotScore.handCount, 12);
+const mixedScreenshotLeaderGrid = [
+  "JK", "KC", "QC", "JC", "AC",
+  "4H", "KH", "QH", "7H", "5H",
+  "4D", "3S", "3C", "JD", "5D",
+  "10S", "KS", "QD", "JS", "AD",
+  "4C", "8C", "6C", "7C", "5C",
+];
+const mixedScreenshotLeaderDiscard = ["9C", "7S", "9H", "9D", "9S"];
+const mixedScreenshotLeaderScore = scoreProPlacement(
+  mixedScreenshotLeaderGrid,
+  mixedScreenshotLeaderDiscard,
+);
+assert.equal(mixedScreenshotLeaderScore.total, 24450);
+assert.equal(mixedScreenshotLeaderScore.handCount, 12);
+assert.deepEqual(
+  sortProCardIds([
+    ...mixedScreenshotLeaderGrid,
+    ...mixedScreenshotLeaderDiscard,
+  ]),
+  sortProCardIds(mixedScreenshotDeal),
+);
+const mixedScreenshotRestartSearch = solveProHeuristic(
+  mixedScreenshotDeal,
+  {
+    timeLimitMs: 5000,
+    maxAnnealingAttempts: 120000,
+    maxSolutions: 4,
+    incumbent: {
+      grid: mixedScreenshotGrid,
+      discard: mixedScreenshotDiscard,
+      score: mixedScreenshotScore,
+      source: "screenshot regression floor",
+    },
+  },
+);
+assert.ok(
+  mixedScreenshotRestartSearch.leaderRestartCount > 0,
+  "a Pro pass should revisit its current leader before exhausting every structural start",
+);
+assert.ok(
+  mixedScreenshotRestartSearch.best.score.total >= mixedScreenshotScore.total,
+);
+assertResultMatchesDeal(mixedScreenshotRestartSearch, mixedScreenshotDeal);
+
 const proDeal = [...referenceBGrid, ...referenceBDiscard];
 const result = solveProHeuristic(proDeal, {
   timeLimitMs: 75,
