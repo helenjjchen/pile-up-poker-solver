@@ -466,26 +466,8 @@ function proDiscardRankPoints(imageData, rect, inkColor) {
   return normalizePoints(points.filter(([, y]) => y <= rankBandBottom));
 }
 
-function proTemplateRankCandidates(imageData, rect, zone, inkColor = null) {
-  const topEdge = zone === "discard" ? cardTopEdgeLine(imageData, rect) : null;
-  const dynamicDiscardMask =
-    zone === "discard" ? proDiscardRankPoints(imageData, rect, inkColor) : null;
-  const dynamicDiscardDensity = dynamicDiscardMask?.width && dynamicDiscardMask?.height
-    ? dynamicDiscardMask.points.length / (dynamicDiscardMask.width * dynamicDiscardMask.height)
-    : 0;
-  const masks =
-    zone === "discard"
-      ? dynamicDiscardMask && dynamicDiscardDensity < 0.72
-        ? [dynamicDiscardMask]
-        : [
-            ...DISCARD_RANK_CROPS.map((crop) => rankPoints(imageData, rect, crop, topEdge)),
-            ...TEMPLATE_DISCARD_RANK_CROPS.map((crop) =>
-              rankPointsFromCardFrame(imageData, rect, crop, topEdge),
-            ),
-          ]
-      : [rankPoints(imageData, rect, GRID_RANK_CROPS[0])];
+function proRankCandidatesFromMasks(masks) {
   const candidates = new Map();
-
   masks.forEach((rawMask) => {
     const mask = normalizedRankMask(
       removeArtifactComponents(rawMask ?? { points: [], width: 0, height: 0 }),
@@ -499,8 +481,49 @@ function proTemplateRankCandidates(imageData, rect, zone, inkColor = null) {
       }
     });
   });
+  return [...candidates.values()].sort(
+    (first, second) => second.confidence - first.confidence,
+  );
+}
 
-  return [...candidates.values()].sort((first, second) => second.confidence - first.confidence);
+function proTemplateRankCandidates(imageData, rect, zone, inkColor = null) {
+  const topEdge = zone === "discard" ? cardTopEdgeLine(imageData, rect) : null;
+  const dynamicDiscardMask =
+    zone === "discard" ? proDiscardRankPoints(imageData, rect, inkColor) : null;
+  const dynamicDiscardDensity = dynamicDiscardMask?.width && dynamicDiscardMask?.height
+    ? dynamicDiscardMask.points.length / (dynamicDiscardMask.width * dynamicDiscardMask.height)
+    : 0;
+  if (zone !== "discard") {
+    return proRankCandidatesFromMasks([
+      rankPoints(imageData, rect, GRID_RANK_CROPS[0]),
+    ]);
+  }
+
+  const dynamicCandidates =
+    dynamicDiscardMask && dynamicDiscardDensity < 0.72
+      ? proRankCandidatesFromMasks([dynamicDiscardMask])
+      : [];
+  const dynamicMargin =
+    (dynamicCandidates[0]?.confidence ?? 0) -
+    (dynamicCandidates[1]?.confidence ?? 0);
+  if (
+    dynamicCandidates[0]?.confidence >= 0.52 &&
+    dynamicMargin >= 0.02
+  ) {
+    return dynamicCandidates;
+  }
+
+  // Fall back to independent fixed crops when a tilted tray card or JPEG
+  // antialiasing makes the color-guided mask swallow part of a 9 or K.
+  return proRankCandidatesFromMasks([
+    ...(dynamicDiscardMask && dynamicDiscardDensity < 0.72
+      ? [dynamicDiscardMask]
+      : []),
+    ...DISCARD_RANK_CROPS.map((crop) => rankPoints(imageData, rect, crop, topEdge)),
+    ...TEMPLATE_DISCARD_RANK_CROPS.map((crop) =>
+      rankPointsFromCardFrame(imageData, rect, crop, topEdge),
+    ),
+  ]);
 }
 
 function connectedComponents(points, width, height) {
@@ -2224,6 +2247,59 @@ function stripAttachedComma(box, expectedHeight) {
   };
 }
 
+function stripTrailingComma(box, expectedWidth) {
+  const width = box.right - box.left;
+  const height = box.bottom - box.top;
+  const points = box.points ?? [];
+  if (
+    !points.length ||
+    width < Math.max(7, expectedWidth * 1.18) ||
+    height < 8
+  ) {
+    return null;
+  }
+
+  // In Pro screenshots, the comma after the thousands digit often joins the
+  // preceding glyph through one antialiased diagonal pixel. The comma exists
+  // only in the lower-right tail; the rank body has already reached its true
+  // right edge in the upper two-thirds of the component.
+  const cutoffY = Math.max(1, Math.floor(height * 0.68));
+  const upperPoints = points.filter(([, y]) => y < cutoffY);
+  if (!upperPoints.length) return null;
+  const bodyRight = Math.max(...upperPoints.map(([x]) => x));
+  const trailingPoints = points.filter(
+    ([x, y]) => x > bodyRight && y >= cutoffY,
+  );
+  if (
+    trailingPoints.length < 3 ||
+    trailingPoints.length > points.length * 0.25
+  ) {
+    return null;
+  }
+
+  const bodyPoints = points.filter(
+    ([x, y]) => !(x > bodyRight && y >= cutoffY),
+  );
+  if (bodyPoints.length < points.length * 0.65) return null;
+  const minX = Math.min(...bodyPoints.map(([x]) => x));
+  const maxX = Math.max(...bodyPoints.map(([x]) => x));
+  const minY = Math.min(...bodyPoints.map(([, y]) => y));
+  const maxY = Math.max(...bodyPoints.map(([, y]) => y));
+  return {
+    left: 0,
+    top: 0,
+    right: maxX - minX + 1,
+    bottom: maxY - minY + 1,
+    size: bodyPoints.length,
+    points: bodyPoints.map(([x, y]) => [x - minX, y - minY]),
+  };
+}
+
+function classifyProScoreGlyphInRow(box, expectedWidth) {
+  const withoutComma = stripTrailingComma(box, expectedWidth);
+  return classifyProScoreDigit(withoutComma ?? box);
+}
+
 function classifyScoreGlyphInRow(box, expectedHeight) {
   const withoutComma = stripAttachedComma(box, expectedHeight);
   if (withoutComma) {
@@ -2497,7 +2573,13 @@ function readProScoreTotalFromBoxes(boxes, handCount = null) {
   // ringing can split it into two. Decode both plausible starts and use the
   // separately recognized hand count to reject an impossible extra leading 1.
   const candidates = [1, 2].map((leadingGlyphCount) => {
-    const digits = glyphBoxes.slice(leadingGlyphCount).map(classifyProScoreDigit);
+    const numericBoxes = glyphBoxes.slice(leadingGlyphCount);
+    const expectedWidth = median(
+      numericBoxes.map((box) => box.right - box.left),
+    );
+    const digits = numericBoxes.map((box) =>
+      classifyProScoreGlyphInRow(box, expectedWidth),
+    );
     if (!digits.length || digits.some((digit) => !digit)) return null;
     const text = digits.join("");
     if (!/^\d{3,6}$/.test(text)) return null;
@@ -2579,6 +2661,7 @@ function recognizeProDisplayedScore(imageData, rects) {
     ),
   );
   let handCount = consensusValue(handReads, 2);
+  const corroboratedHandCandidate = consensusValue(handReads, 1);
   const totalReads = totalThresholds.map((threshold) =>
     readProScoreTotalFromBoxes(
       textComponentBoxes(
@@ -2609,6 +2692,18 @@ function recognizeProDisplayedScore(imageData, rects) {
       : feasibleTotals.length
         ? feasibleTotals[0]
         : consensusTotal;
+  if (
+    !Number.isFinite(handCount) &&
+    Number.isInteger(corroboratedHandCandidate) &&
+    Number.isFinite(total) &&
+    isProDisplayedScorePairFeasible(total, corroboratedHandCandidate)
+  ) {
+    // A single clean threshold can be enough for the small gray "12 HANDS"
+    // label after JPEG compression erases it from adjacent masks. Accept that
+    // read only when the longer dollar total independently makes the pair
+    // arithmetically possible.
+    handCount = corroboratedHandCandidate;
+  }
   if (
     Number.isFinite(total) &&
     Number.isFinite(handCount) &&

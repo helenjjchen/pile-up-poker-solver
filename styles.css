@@ -355,12 +355,20 @@ h2 {
 .joker-suits {
   position: absolute;
   inset-block-start: 7cqi;
-  inset-inline: 8cqi;
-  display: flex;
-  justify-content: space-between;
-  gap: 1px;
-  font-size: clamp(0.78rem, 21cqi, 1.5rem);
+  inset-inline: 5cqi;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: center;
+  justify-items: center;
+  font-size: clamp(0.74rem, 19cqi, 1.5rem);
   line-height: 1;
+  white-space: nowrap;
+}
+
+.joker-suit {
+  display: block;
+  min-width: 0;
+  text-align: center;
 }
 
 .joker-suit.suit-hearts {

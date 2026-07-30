@@ -84,12 +84,14 @@ The source of truth is `src/scoring.js` for Normal and `src/proScoring.js` for P
 
 1. locates the board, discard, and tray regions from game geometry and suit-colored borders;
 2. aligns each card locally so small screenshot shifts do not move the sampling windows;
-3. classifies suits from the game's palette and ranks from normalized glyph templates;
+3. classifies suits from the game's palette and ranks from normalized glyph templates, using independent
+   color-guided and fixed crops for weak or tilted Pro discard reads;
 4. recognizes the joker from its multi-suit face;
 5. reads the displayed dollar total and hand count from restricted scoreboard regions;
 6. validates the proposed cards by rescoring the full placement.
 
-The dollar total is the primary checksum. Hand count is secondary and discarded when it forms an impossible
+The dollar total is the primary checksum. Its Pro parser removes a thousands comma that JPEG antialiasing sometimes
+joins to the preceding digit before classifying that digit. Hand count is secondary and discarded when it forms an impossible
 score/hand tuple. A checksum match may clear a visual-confidence flag only when every unused legal alternative for
 that slot would break the checksum. Duplicate/missing cards and checksum-equivalent alternatives remain reviewable.
 

@@ -107,6 +107,19 @@ const proFixtures = [
     },
   },
   {
+    file: "pileup-pro-dark-22980.png",
+    total: 22980,
+    handCount: 12,
+    grid: [
+      "AC", "KC", "JC", "QC", "JK",
+      "4D", "7S", "JD", "4H", "5D",
+      "3S", "7H", "3C", "QD", "5H",
+      "AD", "KS", "JS", "QH", "10S",
+      "4C", "7C", "6C", "8C", "5C",
+    ],
+    discard: ["9D", "9S", "9H", "9C", "KH"],
+  },
+  {
     file: "pileup-pro-cropped-25560.png",
     total: 25560,
     handCount: 12,
@@ -234,23 +247,36 @@ const slightlyDarkRecognition = recognizeProFantasylandImageData(
 );
 assert.equal(
   slightlyDarkRecognition.discard[0],
-  "AH",
-  "the brightness regression fixture should exercise the known 2/A ambiguity",
+  "2H",
+  "multi-crop discard recognition should preserve the 2 under moderate dimming",
 );
 assert.equal(
   slightlyDarkRecognition.complete,
-  false,
-  "a checksum-breaking card read must never be reported as complete",
-);
-assert.equal(slightlyDarkRecognition.scoreMismatch.totalMismatch, true);
-assert.equal(slightlyDarkRecognition.scoreMismatch.actual.total, 19440);
-assert.equal(slightlyDarkRecognition.scoreMismatch.expected.total, 23040);
-assert.equal(
-  slightlyDarkRecognition.review.discard[0],
   true,
-  "checksum analysis should highlight the discard card that can restore the displayed score",
+  "the corrected moderate-brightness read should validate without review",
 );
-assert.match(slightlyDarkRecognition.warning, /do not match the screenshot score/);
+assert.equal(slightlyDarkRecognition.scoreMismatch, null);
+assert.equal(
+  slightlyDarkRecognition.review.discard.some(Boolean),
+  false,
+  "a visually and arithmetically validated discard should not be highlighted",
+);
+
+const checksumBreakingRecognition = recognizeProFantasylandImageData(
+  adjustBrightness(proReferenceA, 0.7),
+);
+assert.equal(checksumBreakingRecognition.scoreMismatch.totalMismatch, true);
+assert.equal(checksumBreakingRecognition.scoreMismatch.actual.total, 17280);
+assert.equal(checksumBreakingRecognition.scoreMismatch.expected.total, 23040);
+assert.equal(
+  checksumBreakingRecognition.review.discard[0],
+  true,
+  "checksum analysis should still highlight a darkened discard read that can restore the displayed score",
+);
+assert.match(
+  checksumBreakingRecognition.warning,
+  /do not match the screenshot score/,
+);
 
 const darkRecognition = recognizeProFantasylandImageData(
   adjustBrightness(proReferenceA, 0.72),
