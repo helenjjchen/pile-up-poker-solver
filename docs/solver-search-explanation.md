@@ -465,22 +465,34 @@ Pro currently uses a best-found anytime search:
    mixed and unrestricted layouts.
 3. Keep the user layout, saved best, and earlier-run leaders as protected lower
    bounds.
-4. Cache every five-card score encountered. After a swap, recompute only the
+4. When a user layout or saved best exists, check every single-card swap from
+   that leader before broad exploration. Repeat improving swaps until the
+   leader reaches a one-swap local maximum.
+5. Run a bounded beam look-ahead from the strongest structural alternatives.
+   This preserves several promising intermediate boards across eight swap
+   layers, so a higher placement can be reached even when its first few moves
+   temporarily lower the score. The beam is score- and hand-potential driven,
+   not tied to any one suit or rank pattern.
+6. Cache every five-card score encountered. After a swap, recompute only the
    affected rows, columns, corner hand, or discard instead of rescoring all 12
    possible hands.
-5. Split the budget between structured refinement and longer annealing lanes.
+7. Split the remaining budget between structured refinement and longer
+   annealing lanes.
    Random restarts remain active so rank-heavy or four-suit structures are never
    treated as universally optimal.
-6. After every few structural restarts, perturb the current best board and
+8. After every few structural restarts, perturb the current best board and
    launch an independent trajectory from it. This brings the useful behavior
    of a later continuation pass into the first run without abandoning unused
    structural families.
-7. Refine multiple distinct leaders at the end, then group equivalent outcomes
+9. Refine multiple distinct leaders at the end, then group equivalent outcomes
    before rendering result pills.
 
 The worker runs this search in short cooperative slices and streams a result only
 when it improves or enough time has passed for useful progress feedback. The UI
 can stop the worker early without losing the strongest placement already posted.
+The screenshot remains pinned for comparison, while the other result pills show
+the strongest distinct alternatives actually found—even when some are below the
+uploaded score.
 
 Repeat Optimize clicks pass earlier leaders back into the worker, skip the
 already-completed opening portfolio, perturb those leaders, and select a new

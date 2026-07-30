@@ -292,11 +292,10 @@ assert.deepEqual(
   ]),
   sortProCardIds(mixedScreenshotDeal),
 );
-const mixedScreenshotRestartSearch = solveProHeuristic(
+const mixedScreenshotRestartSession = createProHeuristicSession(
   mixedScreenshotDeal,
   {
-    timeLimitMs: 5000,
-    maxAnnealingAttempts: 120000,
+    timeLimitMs: 15000,
     maxSolutions: 4,
     incumbent: {
       grid: mixedScreenshotGrid,
@@ -306,12 +305,35 @@ const mixedScreenshotRestartSearch = solveProHeuristic(
     },
   },
 );
+assert.deepEqual(
+  mixedScreenshotRestartSession.starts[0],
+  [...mixedScreenshotGrid, ...mixedScreenshotDiscard],
+  "the uploaded floor should be the first Pro trajectory instead of sorting behind weaker starts",
+);
+assert.equal(
+  mixedScreenshotRestartSession.phase,
+  "refinement",
+  "a Pro run with an incumbent should check its improving swaps before broad exploration",
+);
+assert.equal(mixedScreenshotRestartSession.refinementResumesAnnealing, true);
+while (!stepProHeuristicSession(mixedScreenshotRestartSession, 50)) {
+  // Exercise the same prioritized incumbent path used by the browser worker.
+}
+const mixedScreenshotRestartSearch = finishProHeuristicSession(
+  mixedScreenshotRestartSession,
+);
 assert.ok(
   mixedScreenshotRestartSearch.leaderRestartCount > 0,
   "a Pro pass should revisit its current leader before exhausting every structural start",
 );
 assert.ok(
-  mixedScreenshotRestartSearch.best.score.total >= mixedScreenshotScore.total,
+  mixedScreenshotRestartSearch.best.score.total >=
+    mixedScreenshotLeaderScore.total,
+  `incumbent look-ahead missed the known $${mixedScreenshotLeaderScore.total} placement and returned $${mixedScreenshotRestartSearch.best.score.total}`,
+);
+assert.ok(
+  mixedScreenshotRestartSearch.beamAttempts > 0,
+  "a Pro screenshot run should spend a bounded opening lane on coordinated multi-swap improvements",
 );
 assertResultMatchesDeal(mixedScreenshotRestartSearch, mixedScreenshotDeal);
 

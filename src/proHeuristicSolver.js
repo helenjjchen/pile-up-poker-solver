@@ -1954,7 +1954,8 @@ function initialStates(
   }
   const unique = new Map();
   for (const state of starts) unique.set(state.join("|"), state);
-  return [...unique.values()]
+  const protectedKeys = new Set(priorStates.map((state) => state.join("|")));
+  const rankedStarts = [...unique.values()]
     .map((state) => {
       const solution = stateToSolution(state, "Pro structured seed");
       return {
@@ -1970,8 +1971,16 @@ function initialStates(
       const scoreComparison = compareProScores(b.score, a.score);
       if (scoreComparison !== 0) return scoreComparison;
       return b.fitness - a.fitness;
-    })
-    .map((entry) => entry.state);
+    });
+  const protectedStarts = rankedStarts
+    .filter((entry) => protectedKeys.has(entry.state.join("|")))
+    .sort((first, second) => compareProScores(second.score, first.score));
+  const exploratoryStarts = rankedStarts.filter(
+    (entry) => !protectedKeys.has(entry.state.join("|")),
+  );
+  return [...protectedStarts, ...exploratoryStarts].map(
+    (entry) => entry.state,
+  );
 }
 
 function mutateTowardStraightFlush(state, random) {
@@ -2398,6 +2407,129 @@ function startRefinementSeed(session, solution) {
   session.refinementSecondIndex = 1;
 }
 
+function startLeaderRefinement(session) {
+  if (!session.best) return;
+  session.phase = "refinement";
+  session.refinementResumesAnnealing = true;
+  session.refinementQueue = [session.best];
+  session.refinementQueueIndex = 0;
+  startRefinementSeed(session, session.best);
+}
+
+function startBeamSeed(session) {
+  const state = session.beamSeeds[session.beamSeedIndex];
+  if (!state) {
+    session.incumbentBeamPending = false;
+    session.phase = "annealing";
+    session.currentState = null;
+    session.current = null;
+    session.iteration = 0;
+    return;
+  }
+  session.beamDepth = 0;
+  session.beam = [{
+    state: [...state],
+    evaluation: fastStateEvaluation(state),
+  }];
+  session.beamNext = [];
+  session.beamNextKeys = new Set();
+  session.beamParentIndex = 0;
+  session.beamFirstIndex = 0;
+  session.beamSecondIndex = 1;
+}
+
+function startIncumbentBeam(session) {
+  const leaderKey = session.best
+    ? [...session.best.grid, ...session.best.discard].join("|")
+    : "";
+  session.beamSeeds = session.starts
+    .filter((state) => state.join("|") !== leaderKey)
+    .slice(0, 3)
+    .map((state) => [...state]);
+  session.beamSeedIndex = 0;
+  session.phase = "beam";
+  startBeamSeed(session);
+}
+
+function advanceBeamPair(session) {
+  session.beamSecondIndex += 1;
+  if (session.beamSecondIndex < 30) return;
+  session.beamFirstIndex += 1;
+  session.beamSecondIndex = session.beamFirstIndex + 1;
+  if (session.beamFirstIndex < 29) return;
+  session.beamParentIndex += 1;
+  session.beamFirstIndex = 0;
+  session.beamSecondIndex = 1;
+}
+
+function finishBeamDepth(session) {
+  session.beamDepth += 1;
+  session.beam = session.beamNext
+    .sort((first, second) => {
+      if (first.evaluation.fitness !== second.evaluation.fitness) {
+        return second.evaluation.fitness - first.evaluation.fitness;
+      }
+      return compareProScores(second.evaluation, first.evaluation);
+    })
+    .slice(0, session.beamWidth);
+  session.beamNext = [];
+  session.beamNextKeys = new Set();
+  session.beamParentIndex = 0;
+  session.beamFirstIndex = 0;
+  session.beamSecondIndex = 1;
+
+  if (session.beam.length && session.beamDepth < session.beamMaxDepth) return;
+  session.beamSeedIndex += 1;
+  startBeamSeed(session);
+}
+
+function stepBeam(session) {
+  if (session.beamParentIndex >= session.beam.length) {
+    finishBeamDepth(session);
+    return;
+  }
+  const parent = session.beam[session.beamParentIndex];
+  const candidateState = [...parent.state];
+  const first = session.beamFirstIndex;
+  const second = session.beamSecondIndex;
+  [candidateState[first], candidateState[second]] = [
+    candidateState[second],
+    candidateState[first],
+  ];
+  const key = candidateState.join("|");
+  if (!session.beamNextKeys.has(key)) {
+    session.beamNextKeys.add(key);
+    const candidateEvaluation = fastStateEvaluationAfterMutation(
+      candidateState,
+      parent.evaluation,
+      [first, second],
+    );
+    session.beamNext.push({
+      state: candidateState,
+      evaluation: candidateEvaluation,
+    });
+    session.attempts += 1;
+    session.beamAttempts += 1;
+
+    const comparison = compareProScores(
+      candidateEvaluation,
+      session.best.score,
+    );
+    if (comparison >= 0) {
+      const candidate = stateToSolution(
+        candidateState,
+        "Pro incumbent look-ahead",
+      );
+      session.bestSolutions.set(placementKey(candidate), candidate);
+      if (comparison > 0) session.best = candidate;
+    }
+  }
+  advanceBeamPair(session);
+  if (session.beamParentIndex >= session.beam.length) {
+    finishBeamDepth(session);
+  }
+}
+
 function advanceRefinementPair(session) {
   session.refinementSecondIndex += 1;
   if (session.refinementSecondIndex < 30) return;
@@ -2437,6 +2569,10 @@ function finishRefinementPass(session) {
 
   if (session.refinementResumesAnnealing) {
     session.refinementResumesAnnealing = false;
+    if (session.incumbentBeamPending) {
+      startIncumbentBeam(session);
+      return;
+    }
     session.phase = "annealing";
     session.currentState = null;
     session.current = null;
@@ -2521,6 +2657,7 @@ export function createProHeuristicSession(cardIds, options = {}) {
   );
   const bestSolutions = new Map();
   let best = null;
+  let hasValidIncumbent = false;
   const incumbent = options.incumbent;
   const requestedDealKey = sortProCardIds(cardIds).join("|");
   const requestedMaxSolutions = Number(options.maxSolutions ?? 8);
@@ -2540,6 +2677,7 @@ export function createProHeuristicSession(cardIds, options = {}) {
     sortProCardIds([...incumbent.grid, ...incumbent.discard]).join("|") ===
       requestedDealKey
   ) {
+    hasValidIncumbent = true;
     best = {
       ...incumbent,
       grid: [...incumbent.grid],
@@ -2577,7 +2715,7 @@ export function createProHeuristicSession(cardIds, options = {}) {
     bestSolutions.set(placementKey(strongestStart), strongestStart);
   }
 
-  return {
+  const session = {
     cardIds: [...cardIds],
     continuationIndex,
     timeLimitMs,
@@ -2595,13 +2733,16 @@ export function createProHeuristicSession(cardIds, options = {}) {
     starts,
     bestSolutions,
     best,
+    hasValidIncumbent,
     startIndex: 0,
     restartCount: 0,
     leaderRestartCount: 0,
     leaderRestartInterval:
       maxAnnealingAttempts !== null && maxAnnealingAttempts <= 60_000
         ? Number.POSITIVE_INFINITY
-        : 4,
+        : hasValidIncumbent
+          ? 2
+          : 4,
     currentState: null,
     current: null,
     currentEvaluation: null,
@@ -2613,6 +2754,19 @@ export function createProHeuristicSession(cardIds, options = {}) {
     maxSolutions,
     maxRefinementSeeds,
     phase: "annealing",
+    incumbentBeamPending: hasValidIncumbent,
+    beamSeeds: [],
+    beamSeedIndex: 0,
+    beamWidth: 96,
+    beamMaxDepth: 8,
+    beamDepth: 0,
+    beam: [],
+    beamNext: [],
+    beamNextKeys: new Set(),
+    beamParentIndex: 0,
+    beamFirstIndex: 0,
+    beamSecondIndex: 1,
+    beamAttempts: 0,
     refinementQueue: null,
     refinementQueueIndex: 0,
     refinementResumesAnnealing: false,
@@ -2627,6 +2781,8 @@ export function createProHeuristicSession(cardIds, options = {}) {
     refinementExhausted: false,
     done: false,
   };
+  if (hasValidIncumbent) startLeaderRefinement(session);
+  return session;
 }
 
 export function stepProHeuristicSession(session, sliceMs = 16) {
@@ -2634,6 +2790,10 @@ export function stepProHeuristicSession(session, sliceMs = 16) {
   const sliceDeadline = Math.min(session.deadline, performance.now() + Math.max(1, sliceMs));
 
   while (!session.done && performance.now() < sliceDeadline) {
+    if (session.phase === "beam") {
+      stepBeam(session);
+      continue;
+    }
     if (session.phase === "refinement") {
       stepRefinement(session);
       continue;
@@ -2670,6 +2830,9 @@ export function stepProHeuristicSession(session, sliceMs = 16) {
         0,
         { continuation: session.continuationIndex > 0 },
       );
+      if (session.hasValidIncumbent && session.best) {
+        session.starts.unshift(perturbLeader(session.best, session.random));
+      }
       session.startIndex = 0;
       session.currentState = null;
       session.current = null;
@@ -2755,6 +2918,7 @@ export function finishProHeuristicSession(session) {
     attempts: session.attempts,
     annealingAttempts: session.annealingAttempts,
     refinementAttempts: session.refinementAttempts,
+    beamAttempts: session.beamAttempts,
     refinementPasses: session.refinementPasses,
     refinementExhausted: session.refinementExhausted,
     leaderRestartCount: session.leaderRestartCount,

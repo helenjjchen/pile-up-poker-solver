@@ -145,6 +145,10 @@ Regression contracts include:
 - the `$22,200` structural benchmark remains discoverable;
 - reference deals remain deterministic at their explicit attempt budgets;
 - continuation runs never move the displayed best backward.
+- an uploaded/saved incumbent is refined before broad Pro exploration and is the
+  first protected trajectory;
+- the mixed `$22,260` screenshot deal reaches the known `$24,450` leader through
+  incumbent-aware multi-swap look-ahead;
 
 More detail is in [solver-search-explanation.md](./solver-search-explanation.md).
 
@@ -154,8 +158,9 @@ Normal canonicalizes scoring-preserving board transforms and discard order. Resu
 count, and quality count; variants preserve materially different hand-type profiles while rotations, row/column
 switches, suit-only differences, and irrelevant kickers are folded where valid.
 
-The player's exact placement is pinned even if an equivalent solver result exists. Normal shows up to 12 outcome
-groups and Pro up to 8.
+The player's exact placement is pinned even if an equivalent solver result exists. Result portfolios stay sorted by
+actual score, and may include lower-scoring distinct alternatives when those are among the strongest placements found.
+Normal shows up to 12 outcome groups and Pro up to 8.
 
 Persistence:
 

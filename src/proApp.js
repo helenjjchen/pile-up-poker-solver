@@ -10,7 +10,7 @@ import {
   createProHeuristicSession,
   finishProHeuristicSession,
   stepProHeuristicSession,
-} from "./proHeuristicSolver.js?v=pro-search-7";
+} from "./proHeuristicSolver.js?v=pro-search-8";
 import { compareProScores, scoreProPlacement } from "./proScoring.js";
 import {
   formatScoringWayCount,
@@ -1041,7 +1041,7 @@ function solveInWorker(cardIds, options, onProgress) {
 
     let worker;
     try {
-      worker = new Worker(new URL("./proHeuristicWorker.js?v=pro-solver-11", import.meta.url), {
+      worker = new Worker(new URL("./proHeuristicWorker.js?v=pro-solver-12", import.meta.url), {
         type: "module",
       });
     } catch {

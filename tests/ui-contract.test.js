@@ -96,9 +96,9 @@ const horizontalLabels = ruleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
 
 assert.match(html, /styles\.css\?v=design-system-59/);
-assert.match(html, /src\/modeBoot\.js\?v=mode-shell-9/);
+assert.match(html, /src\/modeBoot\.js\?v=mode-shell-10/);
 assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-50/);
-assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-18/);
+assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-19/);
 assert.match(
   modeBoot,
   /deepSearchOption\.value = isPro \? "45000" : "30000"/,
@@ -113,6 +113,8 @@ assert.match(app, /recognizerFeedback\.js\?v=recognizer-feedback-1/);
 assert.match(proApp, /recognizerFeedback\.js\?v=recognizer-feedback-1/);
 assert.match(app, /solutionPortfolio\.js\?v=solution-portfolio-1/);
 assert.match(proApp, /solutionPortfolio\.js\?v=solution-portfolio-1/);
+assert.match(proApp, /proHeuristicSolver\.js\?v=pro-search-8/);
+assert.match(proApp, /proHeuristicWorker\.js\?v=pro-solver-12/);
 assert.match(app, /solutionProfiles\.js\?v=solution-profiles-2/);
 assert.match(proApp, /solutionProfiles\.js\?v=solution-profiles-2/);
 assert.match(html, /id="normalModeLink" href="\.\/index\.html"/);
