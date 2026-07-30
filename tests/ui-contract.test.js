@@ -96,9 +96,9 @@ const horizontalLabels = ruleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
 
 assert.match(html, /styles\.css\?v=design-system-59/);
-assert.match(html, /src\/modeBoot\.js\?v=mode-shell-8/);
-assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-49/);
-assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-17/);
+assert.match(html, /src\/modeBoot\.js\?v=mode-shell-9/);
+assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-50/);
+assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-18/);
 assert.match(
   modeBoot,
   /deepSearchOption\.value = isPro \? "45000" : "30000"/,
