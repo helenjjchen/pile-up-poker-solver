@@ -8,6 +8,7 @@ const agents = readFileSync(`${root}/AGENTS.md`, "utf8");
 const designSystem = readFileSync(`${root}/docs/design-system.md`, "utf8");
 const html = readFileSync(`${root}/index.html`, "utf8");
 const proHtml = readFileSync(`${root}/pro.html`, "utf8");
+const favicon = readFileSync(`${root}/favicon.svg`, "utf8");
 
 function ruleBodies(selectorPattern) {
   const matches = [...css.matchAll(new RegExp(`${selectorPattern}\\s*\\{([^}]*)\\}`, "gs"))];
@@ -74,6 +75,11 @@ assert.match(
 );
 assert.match(html, /id="normalModeLink" href="\.\/index\.html"/);
 assert.match(html, /id="proModeLink" href="\.\/index\.html\?mode=pro"/);
+assert.match(html, /href="\.\/favicon\.svg\?v=brand-2"/);
+assert.match(proHtml, /href="\.\/favicon\.svg\?v=brand-2"/);
+assert.match(favicon, /<rect[^>]*fill="#ffc000"/);
+assert.match(favicon, /stroke="#181b29"/);
+assert.match(favicon, /fill="#d199fc"/);
 assert.match(proHtml, /window\.location\.replace\("\.\/index\.html\?mode=pro"\)/);
 assert.doesNotMatch(proHtml, /class="topbar"/);
 assert.match(html, /<details class="grid-attempt-panel" id="gridAttemptDetails"[\s\S]*?<summary/);
@@ -106,6 +112,15 @@ const nestedPanels = firstRuleBody(
 assert.match(nestedPanels, /gap:\s*var\(--space-3\)/);
 assert.match(nestedPanels, /padding:\s*var\(--space-3\)/);
 assert.match(nestedPanels, /margin-top:\s*var\(--space-4\)/);
+const collapsedInputPanels = firstRuleBody(
+  "\\.manual-picker-panel:not\\(\\[open\\]\\),\\s*\\.grid-attempt-panel:not\\(\\[open\\]\\)",
+);
+assert.match(collapsedInputPanels, /gap:\s*0/);
+assert.match(collapsedInputPanels, /padding-block:\s*var\(--space-2\)/);
+const collapsedInputSummaries = firstRuleBody(
+  "\\.manual-picker-panel:not\\(\\[open\\]\\) summary,\\s*\\.grid-attempt-panel:not\\(\\[open\\]\\) > summary",
+);
+assert.match(collapsedInputSummaries, /min-height:\s*32px/);
 assert.match(firstRuleBody("\\.attempt-preview\\.is-compact"), /max-height:\s*112px/);
 const reviewSelect = firstRuleBody("\\.attempt-slot\\.is-review select");
 assert.match(reviewSelect, /border:\s*2px solid var\(--accent\)/);
@@ -121,6 +136,25 @@ const scoreLabels = bodyMatching("\\.score-strip span", /font-size:/);
 assert.match(scoreLabels, /font-size:\s*0\.74rem/);
 assert.match(scoreLabels, /white-space:\s*nowrap/);
 assert.doesNotMatch(css, /#resultModeLabel\s*\{/);
+
+assert.doesNotMatch(css, /font-weight:\s*(?:750|850|900)/, "Use the documented shared weight hierarchy");
+assert.match(firstRuleBody("\\.attempt-summary"), /font-weight:\s*400/);
+assert.match(firstRuleBody("\\.scoring-explainer p"), /font-weight:\s*400/);
+assert.match(bodyMatching("\\.diagnostic-value", /font-weight:/), /font-weight:\s*400/);
+assert.match(
+  firstRuleBody("\\.diagnostics-panel summary,\\s*\\.scoring-explainer summary"),
+  /font-weight:\s*700/,
+);
+assert.match(firstRuleBody("\\.section-heading \\.section-meta"), /font-weight:\s*500/);
+assert.match(
+  html,
+  /<summary id="scoringExplainerTitle">What counts as a scoring way\?<\/summary>/,
+);
+assert.doesNotMatch(html, /Pro rules and scoring/i);
+assert.match(
+  html,
+  /<div class="diagnostics-mode-stack mode-only mode-pro" hidden>[\s\S]*?<span class="diagnostic-label">Search Status<\/span>/,
+);
 
 const boardArea = firstRuleBody("\\.board-area");
 assert.match(boardArea, /inline-size:\s*min\(100%,\s*640px,\s*max\(520px,/);
@@ -177,6 +211,7 @@ assert.match(designSystem, /total lives in the title row, is vertically centered
 assert.match(designSystem, /shared title scales fluidly instead of jumping to a compact size/);
 assert.match(designSystem, /stable scrollbar gutter/);
 assert.match(designSystem, /same canonical `index\.html` shell/);
+assert.match(designSystem, /shared favicon uses the universal yellow accent/);
 assert.match(designSystem, /browser[\s\S]*zoom, viewport state, shared markup, and responsive behavior cannot drift/);
 assert.match(designSystem, /Board cards inherit the same rank and suit typography in both versions/);
 assert.match(
@@ -198,6 +233,10 @@ assert.match(
   /user's decision to run a valid[\s\S]*deal always overrides recognizer uncertainty/,
 );
 assert.match(designSystem, /one `2px` accent border/);
+assert.match(designSystem, /use `8px` vertical padding and a `32px` summary floor/);
+assert.match(designSystem, /Do not use `850` or `900` weights/);
+assert.match(designSystem, /Both modes label the scoring-structure explainer “What counts as a scoring way\?”/);
+assert.match(designSystem, /Normal and Pro diagnostics use the same status-card structure and typography/);
 assert.match(designSystem, /Pro is an anytime heuristic/);
 assert.match(
   designSystem,

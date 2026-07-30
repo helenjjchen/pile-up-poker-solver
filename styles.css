@@ -141,7 +141,7 @@ button:disabled {
   border-radius: var(--radius-sm);
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 850;
+  font-weight: 700;
   text-align: center;
   text-decoration: none;
 }
@@ -155,7 +155,7 @@ button:disabled {
   margin: 0 0 4px;
   color: var(--muted);
   font-size: 0.8rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -235,7 +235,7 @@ h2 {
 }
 
 .panel-heading span {
-  font-weight: 800;
+  font-weight: 500;
 }
 
 .deck-grid {
@@ -410,7 +410,7 @@ h2 {
 .optimizer-controls label {
   color: var(--muted);
   font-size: 0.86rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -434,7 +434,7 @@ h2 {
   background: var(--blue);
   color: var(--navy);
   box-shadow: 0 6px 14px rgba(37, 138, 208, 0.22);
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .primary-button:hover:not(:disabled) {
@@ -450,7 +450,7 @@ h2 {
 .secondary-button {
   background: var(--surface-2);
   color: var(--ink);
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .secondary-button:hover:not(:disabled) {
@@ -511,6 +511,12 @@ h2 {
   background: #fbfbfa;
 }
 
+.manual-picker-panel:not([open]),
+.grid-attempt-panel:not([open]) {
+  gap: 0;
+  padding-block: var(--space-2);
+}
+
 .manual-picker-panel summary {
   display: flex;
   align-items: center;
@@ -541,14 +547,14 @@ h2 {
   content: "▸";
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .grid-attempt-panel[open] > summary::before {
   content: "▾";
 }
 
-.grid-attempt-panel > summary span {
+.grid-attempt-panel > summary .section-label {
   flex: 1;
 }
 
@@ -560,24 +566,31 @@ h2 {
   content: "▸";
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .manual-picker-panel[open] summary::before {
   content: "▾";
 }
 
-.manual-picker-panel summary span {
+.manual-picker-panel summary .section-label {
   flex: 1;
   font-size: 0.86rem;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
-.manual-picker-panel summary strong {
+.manual-picker-panel summary .section-meta {
   color: var(--muted);
   font-size: 0.76rem;
-  font-weight: 850;
+  font-weight: 500;
+  text-align: right;
+  text-transform: none;
+}
+
+.manual-picker-panel:not([open]) summary,
+.grid-attempt-panel:not([open]) > summary {
+  min-height: 32px;
 }
 
 .manual-picker-panel .deck-grid {
@@ -591,16 +604,18 @@ h2 {
   gap: var(--space-3);
 }
 
-.section-heading span {
+.section-heading .section-label {
   font-size: 0.86rem;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
-.section-heading strong {
+.section-heading .section-meta {
   color: var(--muted);
   font-size: 0.76rem;
-  font-weight: 850;
+  font-weight: 500;
+  text-align: right;
+  text-transform: none;
 }
 
 .attempt-upload {
@@ -613,26 +628,26 @@ h2 {
   border-radius: var(--radius-control);
   background: var(--surface-2);
   color: var(--ink);
-  font-weight: 900;
   cursor: pointer;
   overflow: hidden;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
 
-.attempt-upload span,
-.attempt-upload strong {
+.attempt-upload-title,
+.attempt-upload-meta {
   display: block;
 }
 
-.attempt-upload span {
+.attempt-upload-title {
   font-size: 0.9rem;
+  font-weight: 700;
 }
 
-.attempt-upload strong {
+.attempt-upload-meta {
   color: var(--muted);
   font-size: 0.74rem;
-  font-weight: 850;
+  font-weight: 400;
 }
 
 .attempt-upload input {
@@ -669,7 +684,7 @@ h2 {
   margin-bottom: var(--space-1);
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -700,7 +715,7 @@ h2 {
   gap: var(--space-1);
   color: var(--muted);
   font-size: 0.62rem;
-  font-weight: 850;
+  font-weight: 600;
 }
 
 .attempt-slot span em {
@@ -719,7 +734,7 @@ h2 {
   background: var(--surface);
   color: var(--ink);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .attempt-slot select.suit-hearts {
@@ -757,7 +772,7 @@ h2 {
   background: var(--surface-2);
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -766,7 +781,7 @@ h2 {
   margin: 0;
   color: var(--ink);
   font-size: 0.82rem;
-  font-weight: 750;
+  font-weight: 400;
   line-height: 1.2;
 }
 
@@ -826,7 +841,7 @@ h2 {
 .score-strip span {
   margin-bottom: var(--space-1);
   font-size: 0.74rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.025em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -850,7 +865,7 @@ h2 {
   padding: var(--space-3) var(--space-4);
   color: var(--muted);
   font-size: 0.82rem;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
   cursor: pointer;
 }
@@ -879,10 +894,10 @@ h2 {
 
 .scoring-explainer p {
   margin: 0;
-  padding: 0 14px 10px;
+  padding: 0 var(--space-3) var(--space-3);
   color: var(--muted);
   font-size: 0.86rem;
-  font-weight: 700;
+  font-weight: 400;
   line-height: 1.35;
 }
 
@@ -903,25 +918,23 @@ h2 {
   display: block;
 }
 
-.best-known-panel span,
-.best-known-panel strong,
-.proof-panel span,
-.proof-panel strong {
+.diagnostic-label,
+.diagnostic-value {
   display: block;
 }
 
-.best-known-panel span,
-.proof-panel span {
+.diagnostic-label {
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 850;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
-.best-known-panel strong,
-.proof-panel strong {
-  margin-top: 3px;
+.diagnostic-value {
+  margin-top: var(--space-1);
   font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.35;
 }
 
 .best-known-panel button {
@@ -951,7 +964,7 @@ h2 {
 .area-label {
   margin-bottom: var(--space-2);
   font-size: clamp(0.72rem, 1.6cqi, 0.82rem);
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.015em;
   text-transform: uppercase;
 }
@@ -1058,7 +1071,7 @@ h2 {
 .line-annotation span {
   color: var(--muted);
   font-size: clamp(0.61rem, 1.35cqi, 0.7rem);
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .line-annotation.is-empty {
@@ -1180,8 +1193,8 @@ h2 {
   min-height: 20px;
   margin: 2px 0 8px;
   font-size: 0.78rem;
-  font-weight: 800;
-  text-align: center;
+  font-weight: 400;
+  text-align: left;
 }
 
 .solution-pill {
@@ -1193,7 +1206,7 @@ h2 {
   border-radius: var(--radius-control);
   background: var(--surface-2);
   color: var(--ink);
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .solution-group {
@@ -1218,7 +1231,7 @@ h2 {
   display: block;
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 500;
 }
 
 .variant-details {
@@ -1235,7 +1248,7 @@ h2 {
   padding: 7px 9px;
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 900;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -1256,7 +1269,7 @@ h2 {
   background: var(--surface-2);
   color: var(--ink);
   font-size: 0.78rem;
-  font-weight: 850;
+  font-weight: 600;
   text-align: left;
 }
 
@@ -1269,7 +1282,7 @@ h2 {
   display: block;
   color: var(--muted);
   font-size: 0.66rem;
-  font-weight: 850;
+  font-weight: 500;
 }
 
 .bucket-panel {
@@ -1316,7 +1329,7 @@ h2 {
   margin-top: 2px;
   color: var(--muted);
   font-size: 0.76rem;
-  font-weight: 800;
+  font-weight: 500;
 }
 
 .pro-page .attempt-grid-slots,

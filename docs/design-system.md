@@ -40,6 +40,8 @@ Use these tokens before introducing a literal spacing value.
 
 ## Header
 
+- The shared favicon uses the universal yellow accent as its tile, the navy corner-frame mark, and the Joker's
+  purple star. Do not use a black or near-black tile for either mode.
 - The header has no divider line between it and the workspace.
 - The title is a single shared `.topbar h1` component using `--header-title-size`; do not style it through a
   mode-specific selector or an unscoped page-heading override. Root text scaling is fixed at `100%` so switching
@@ -80,19 +82,40 @@ Use these tokens before introducing a literal spacing value.
   outside the card's suit border.
 - Manual deal picking and detected-card correction are disclosures with the same heading typography, padding, and
   open/closed indicator in both versions.
+- Open manual-picker and grid-attempt disclosures keep the standard `12px` nested-box inset. When collapsed, they
+  use `8px` vertical padding and a `32px` summary floor so completed input sections remain present without dominating
+  the search controls.
 - Score summary cards use `12px` padding and `12px` gaps.
 - Diagnostics content and its nested status cards use `12px` padding and gaps.
+- Normal and Pro diagnostics use the same status-card structure and typography. Mode-specific search facts may
+  differ, but the component hierarchy must not.
 - Secondary sections may use `16px` padding when they contain a denser grid, such as the hand-count bucket panel.
 - Similar boxes in the same row should share padding, radius, minimum height, and label alignment.
 
 ## Typography
 
+- Body copy, explanatory disclosure copy, runtime text, and status messages use regular `400` weight.
+- Secondary metadata uses `500`; compact labels may use `600`; section headings, control labels, and primary actions
+  use `700`.
+- Reserve `800` for primary numeric totals, card faces, and score annotations. Do not use `850` or `900` weights;
+  they flatten the hierarchy and make secondary information compete with results.
 - Score-strip labels all use the same `0.74rem` size, weight, letter spacing, and capitalization.
 - Dynamic labels such as “Best Found,” “Best Possible,” and “Grid Attempt” must not receive a smaller one-off style.
 - Desktop score-strip labels remain on one line.
 - Values use tabular numerals where appropriate.
 - Multipliers use the multiplication symbol (`×`) in both versions.
 - Muted metadata is visually secondary but must remain legible.
+- Disclosure summaries use the shared section-heading treatment. Content below them is regular weight unless it is a
+  primary score or action.
+
+## Result disclosures
+
+- Both modes label the scoring-structure explainer “What counts as a scoring way?” It explains how results are
+  grouped and deduplicated; it does not repeat Puzzmo's game rules or hand-score reference.
+- Normal and Pro use parallel scoring-way language. Mode-specific copy may clarify proof versus anytime-search
+  behavior, but not introduce a separate typography or layout.
+- Diagnostics and scoring-way body copy are regular weight. Their summaries remain visually discoverable without
+  making every line beneath them bold.
 
 ## Board and cards
 

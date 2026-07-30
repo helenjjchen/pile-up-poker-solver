@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fantasyland Pile-Up Poker Solver</title>
-    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=design-system-59" />
+    <link rel="icon" href="./favicon.svg?v=brand-2" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css?v=design-system-60" />
   </head>
   <body>
     <main class="app-shell">
@@ -31,20 +31,20 @@
           </div>
           <section class="screenshot-panel" aria-label="Screenshot import">
             <div class="section-heading">
-              <span>Screenshot Import</span>
-              <strong>Auto-fill</strong>
+              <span class="section-label">Screenshot Import</span>
+              <span class="section-meta">Auto-fill</span>
             </div>
             <label class="attempt-upload" for="attemptScreenshot">
-              <span>Upload Screenshot</span>
-              <strong>Auto-detect deal + grid attempt</strong>
+              <span class="attempt-upload-title">Upload Screenshot</span>
+              <span class="attempt-upload-meta">Auto-detect deal + grid attempt</span>
               <input id="attemptScreenshot" type="file" accept="image/*" />
             </label>
             <img class="attempt-preview" id="attemptPreview" alt="Uploaded grid attempt screenshot" hidden />
           </section>
           <details class="manual-picker-panel" id="manualPickerDetails" open>
             <summary>
-              <span>Manual Deal Picker</span>
-              <strong id="manualPickerHint">Choose 20 cards</strong>
+              <span class="section-label">Manual Deal Picker</span>
+              <span class="section-meta" id="manualPickerHint">Choose 20 cards</span>
             </summary>
             <div class="deck-grid" id="deckGrid"></div>
             <div class="control-row">
@@ -54,8 +54,8 @@
 
           <details class="grid-attempt-panel" id="gridAttemptDetails" aria-label="Grid attempt" open>
             <summary class="section-heading">
-              <span>Grid Attempt</span>
-              <strong id="attemptScoreBadge">Optional</strong>
+              <span class="section-label">Grid Attempt</span>
+              <span class="section-meta" id="attemptScoreBadge">Optional</span>
             </summary>
             <div class="attempt-editor">
               <div class="attempt-grid-block">
@@ -90,7 +90,7 @@
           <p class="status-line" id="statusLine" role="status" aria-live="polite">Select 20 cards.</p>
           <div class="optimizer-timer is-hidden" id="optimizerTimer">
             <span class="timer-spinner" aria-hidden="true"></span>
-            <strong id="optimizerTimerText">Idle</strong>
+            <span id="optimizerTimerText">Idle</span>
           </div>
         </aside>
 
@@ -151,8 +151,8 @@
               <div class="diagnostics-mode-stack mode-only mode-normal">
                 <div class="best-known-panel" id="bestKnownPanel">
                   <div>
-                    <span>Best Known For This Deal</span>
-                    <strong id="bestKnownSummary">No saved result</strong>
+                    <span class="diagnostic-label">Best Known For This Deal</span>
+                    <span class="diagnostic-value" id="bestKnownSummary">No saved result</span>
                   </div>
                   <button type="button" class="secondary-button" id="showBestKnownButton" disabled>
                     Show Saved Placement
@@ -160,13 +160,15 @@
                 </div>
 
                 <div class="proof-panel" id="proofPanel">
-                  <span>Exact Proof Status</span>
-                  <strong id="proofSummary">No proof run for this deal yet</strong>
+                  <span class="diagnostic-label">Exact Proof Status</span>
+                  <span class="diagnostic-value" id="proofSummary">No proof run for this deal yet</span>
                 </div>
               </div>
-              <div class="proof-panel mode-only mode-pro" hidden>
-                <span>Pro search status</span>
-                <strong id="searchSummary">No search run yet</strong>
+              <div class="diagnostics-mode-stack mode-only mode-pro" hidden>
+                <div class="proof-panel">
+                  <span class="diagnostic-label">Search Status</span>
+                  <span class="diagnostic-value" id="searchSummary">No search run yet</span>
+                </div>
               </div>
             </div>
           </details>
@@ -188,15 +190,14 @@
             </div>
             <div class="mode-only mode-pro" hidden>
               <p>
-                Pro uses five rows, five columns, and the four corners plus center. The corner hand is worth ×2.
-                Discard scores at ×3 only when all 11 grid hands score.
+                The solver is trying to maximize dollars first, then preserve truly different scoring structures for tied
+                outcomes. It folds rotations/reflections of the same board, suit-only swaps when suits do not affect the
+                hand, and irrelevant kickers for pairs, trips, quads, and two pair.
               </p>
               <p>
-                The joker independently becomes the best possible card in every hand it touches. Full houses score
-                $230. A four-of-a-kind plus joker remains four-of-a-kind; there is no five-of-a-kind hand.
-              </p>
-              <p>
-                Multipliers are ×2 at 4–5 hands, ×3 at 6–7, ×4 at 8–9, ×5 at 10–11, and ×6 only at all 12.
+                It still shows separate ways when the same total, hand count, and quality count come from different hand
+                type mixes. Those representatives are saved for continuation runs. Counts say “ways found” because Pro
+                is an anytime search, so a run can improve without proving that it found every tied scoring structure.
               </p>
             </div>
           </details>
@@ -205,6 +206,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/modeBoot.js?v=mode-shell-10"></script>
+    <script type="module" src="./src/modeBoot.js?v=mode-shell-11"></script>
   </body>
 </html>

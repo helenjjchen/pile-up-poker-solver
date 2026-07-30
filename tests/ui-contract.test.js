@@ -95,8 +95,8 @@ assert.match(horizontalRules, /background:\s*var\(--accent\)/);
 const horizontalLabels = ruleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
 
-assert.match(html, /styles\.css\?v=design-system-59/);
-assert.match(html, /src\/modeBoot\.js\?v=mode-shell-10/);
+assert.match(html, /styles\.css\?v=design-system-60/);
+assert.match(html, /src\/modeBoot\.js\?v=mode-shell-11/);
 assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-50/);
 assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-19/);
 assert.match(
@@ -129,7 +129,7 @@ assert.match(modeBoot, /normalModeLink\.removeAttribute\("aria-current"\)/);
 assert.match(modeBoot, /proModeLink\.removeAttribute\("aria-current"\)/);
 assert.match(modeBoot, /boardArea\.classList\.toggle\("pro-board-area", isPro\)/);
 assert.match(html, /class="bucket-panel mode-only mode-normal"/);
-assert.match(html, /class="proof-panel mode-only mode-pro" hidden/);
+assert.match(html, /class="diagnostics-mode-stack mode-only mode-pro" hidden/);
 assert.match(ruleBody("\\.mode-only\\[hidden\\]"), /display:\s*none !important/);
 assert.match(html, /id="optimizeButton" disabled/);
 assert.match(

@@ -30,7 +30,6 @@ const boardArea = document.querySelector(".board-area");
 const selectedCount = document.querySelector("#selectedCount");
 const manualPickerHint = document.querySelector("#manualPickerHint");
 const statusLine = document.querySelector("#statusLine");
-const scoringExplainerTitle = document.querySelector("#scoringExplainerTitle");
 const deepSearchOption = document.querySelector("#deepSearchOption");
 
 pickerPanel.setAttribute("aria-label", isPro ? "Pro deal card picker" : "Deal card picker");
@@ -43,9 +42,6 @@ boardArea.classList.toggle("pro-board-area", isPro);
 selectedCount.textContent = isPro ? "1/30" : "0/20";
 manualPickerHint.textContent = isPro ? "Choose 29 more" : "Choose 20 cards";
 statusLine.textContent = isPro ? "Select 29 more cards." : "Select 20 cards.";
-scoringExplainerTitle.textContent = isPro
-  ? "Pro rules and scoring"
-  : "What counts as a scoring way?";
 deepSearchOption.value = isPro ? "45000" : "30000";
 deepSearchOption.textContent = isPro ? "Deep · 45s" : "Deep · 30s";
 
