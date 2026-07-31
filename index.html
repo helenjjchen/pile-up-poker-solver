@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fantasyland Pile-Up Poker Solver</title>
-    <link rel="icon" href="./favicon.svg?v=brand-2" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=design-system-60" />
+    <link rel="icon" href="./favicon.svg?v=brand-3" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css?v=design-system-61" />
   </head>
   <body>
     <main class="app-shell">
@@ -67,8 +67,14 @@
                 <div class="attempt-discard-slots" id="attemptDiscardSlots"></div>
               </div>
             </div>
-            <p class="attempt-summary" id="attemptSummary" role="status" aria-live="polite">
-              Optional baseline: add a player grid here, or upload a screenshot to fill it automatically.
+            <p
+              class="attempt-summary"
+              id="attemptSummary"
+              role="status"
+              aria-live="polite"
+              data-empty-copy="Optional: add a grid, or upload a screenshot to fill it."
+            >
+              Optional: add a grid, or upload a screenshot to fill it.
             </p>
             <div class="attempt-actions">
               <button type="button" class="secondary-button is-hidden" id="confirmAttemptReviewButton">
@@ -85,7 +91,15 @@
               <option value="10000">Balanced · 10s</option>
               <option id="deepSearchOption" value="30000" selected>Deep · 30s</option>
             </select>
-            <button type="button" class="primary-button" id="optimizeButton" disabled>Optimize</button>
+            <button
+              type="button"
+              class="primary-button"
+              id="optimizeButton"
+              data-continuation-copy="Optimize again to continue searching."
+              disabled
+            >
+              Optimize
+            </button>
           </div>
           <p class="status-line" id="statusLine" role="status" aria-live="polite">Select 20 cards.</p>
           <div class="optimizer-timer is-hidden" id="optimizerTimer">
@@ -147,7 +161,7 @@
           <details class="diagnostics-panel">
             <summary>Solver Diagnostics</summary>
             <div class="diagnostics-content">
-              <div class="runtime-info" id="runtimeInfo">Not run</div>
+              <div class="runtime-info" id="runtimeInfo"></div>
               <div class="diagnostics-mode-stack mode-only mode-normal">
                 <div class="best-known-panel" id="bestKnownPanel">
                   <div>
@@ -167,7 +181,7 @@
               <div class="diagnostics-mode-stack mode-only mode-pro" hidden>
                 <div class="proof-panel">
                   <span class="diagnostic-label">Search Status</span>
-                  <span class="diagnostic-value" id="searchSummary">No search run yet</span>
+                  <span class="diagnostic-value" id="searchSummary" data-empty-copy="No search yet">No search yet</span>
                 </div>
               </div>
             </div>
@@ -175,29 +189,27 @@
 
           <details class="scoring-explainer">
             <summary id="scoringExplainerTitle">What counts as a scoring way?</summary>
-            <div class="mode-only mode-normal">
+            <div class="explainer-copy">
               <p>
-                The solver is trying to maximize dollars first, then preserve truly different scoring structures for tied
-                outcomes. It folds rotations/reflections of the same board, suit-only swaps when suits do not affect the
-                hand, and irrelevant kickers for pairs, trips, quads, and two pair.
+                Multiple placements can produce the same score. For example, you can swap rows and columns, move cards that
+                do not change the hands they belong to, or make suit swaps that leave the scoring unchanged.
               </p>
               <p>
-                It still shows separate ways when the same total, hand count, and quality count come from different hand
-                type mixes, such as one placement using trips plus two pair while another uses a pair plus a straight.
-                Those representatives are saved for future runs. Counts say “ways found” because proving the best score
-                does not by itself prove that every tied scoring way has been enumerated.
-              </p>
-            </div>
-            <div class="mode-only mode-pro" hidden>
-              <p>
-                The solver is trying to maximize dollars first, then preserve truly different scoring structures for tied
-                outcomes. It folds rotations/reflections of the same board, suit-only swaps when suits do not affect the
-                hand, and irrelevant kickers for pairs, trips, quads, and two pair.
+                The solver does not list every equivalent permutation. It looks for the highest dollar value first, then
+                keeps representative layouts only when they use meaningfully different combinations of hand types.
+                For example, a tied total built from a straight and two pairs is a different scoring way from one built
+                from a flush and three of a kind; rotating either board is not.
               </p>
               <p>
-                It still shows separate ways when the same total, hand count, and quality count come from different hand
-                type mixes. Those representatives are saved for continuation runs. Counts say “ways found” because Pro
-                is an anytime search, so a run can improve without proving that it found every tied scoring structure.
+                “Ways found” is the number of distinct scoring combinations found for that score—not every board that
+                could produce it. Running Optimize again continues from the strongest layouts already found and can add
+                a stronger score or uncover a new combination.
+              </p>
+              <p class="mode-only mode-normal">
+                If the result is already certified optimal, Normal loads it immediately instead of searching again.
+              </p>
+              <p class="mode-only mode-pro" hidden>
+                Pro is an anytime search, so the count can continue growing across runs.
               </p>
             </div>
           </details>
@@ -206,6 +218,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/modeBoot.js?v=mode-shell-11"></script>
+    <script type="module" src="./src/modeBoot.js?v=mode-shell-13"></script>
   </body>
 </html>

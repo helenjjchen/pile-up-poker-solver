@@ -33,6 +33,12 @@ for (const [token, value] of Object.entries({
   "--space-3": "12px",
   "--space-4": "16px",
   "--space-5": "24px",
+  "--type-caption": "0.72rem",
+  "--type-meta": "0.78rem",
+  "--type-body": "0.86rem",
+  "--type-heading": "1rem",
+  "--type-display": "1.5rem",
+  "--type-micro": "0.62rem",
   "--header-title-size": "2.15rem",
   "--radius-card": "8px",
   "--joker": "#d199fc",
@@ -75,10 +81,10 @@ assert.match(
 );
 assert.match(html, /id="normalModeLink" href="\.\/index\.html"/);
 assert.match(html, /id="proModeLink" href="\.\/index\.html\?mode=pro"/);
-assert.match(html, /href="\.\/favicon\.svg\?v=brand-2"/);
-assert.match(proHtml, /href="\.\/favicon\.svg\?v=brand-2"/);
-assert.match(favicon, /<rect[^>]*fill="#ffc000"/);
-assert.match(favicon, /stroke="#181b29"/);
+assert.match(html, /href="\.\/favicon\.svg\?v=brand-3"/);
+assert.match(proHtml, /href="\.\/favicon\.svg\?v=brand-3"/);
+assert.doesNotMatch(favicon, /<rect/);
+assert.match(favicon, /stroke="#ffc000"/);
 assert.match(favicon, /fill="#d199fc"/);
 assert.match(proHtml, /window\.location\.replace\("\.\/index\.html\?mode=pro"\)/);
 assert.doesNotMatch(proHtml, /class="topbar"/);
@@ -133,14 +139,19 @@ assert.match(scoreStrip, /grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr
 assert.match(scoreStrip, /gap:\s*var\(--space-3\)/);
 
 const scoreLabels = bodyMatching("\\.score-strip span", /font-size:/);
-assert.match(scoreLabels, /font-size:\s*0\.74rem/);
+assert.match(scoreLabels, /font-size:\s*var\(--type-caption\)/);
 assert.match(scoreLabels, /white-space:\s*nowrap/);
 assert.doesNotMatch(css, /#resultModeLabel\s*\{/);
 
 assert.doesNotMatch(css, /font-weight:\s*(?:750|850|900)/, "Use the documented shared weight hierarchy");
-assert.match(firstRuleBody("\\.attempt-summary"), /font-weight:\s*400/);
+const attemptSummary = firstRuleBody("\\.attempt-summary");
+assert.match(attemptSummary, /font-size:\s*var\(--type-body\)/);
+assert.match(attemptSummary, /font-weight:\s*400/);
+assert.match(attemptSummary, /line-height:\s*1\.45/);
+assert.match(attemptSummary, /overflow-wrap:\s*break-word/);
 assert.match(firstRuleBody("\\.scoring-explainer p"), /font-weight:\s*400/);
 assert.match(bodyMatching("\\.diagnostic-value", /font-weight:/), /font-weight:\s*400/);
+assert.match(bodyMatching("\\.diagnostic-value", /font-size:/), /font-size:\s*var\(--type-body\)/);
 assert.match(
   firstRuleBody("\\.diagnostics-panel summary,\\s*\\.scoring-explainer summary"),
   /font-weight:\s*700/,
@@ -150,6 +161,15 @@ assert.match(
   html,
   /<summary id="scoringExplainerTitle">What counts as a scoring way\?<\/summary>/,
 );
+assert.match(html, /Multiple placements can produce the same score/);
+assert.match(html, /does not list every equivalent permutation/);
+assert.match(html, /meaningfully different combinations of hand types/);
+assert.match(html, /a straight and two pairs/);
+assert.match(html, /a flush and three of a kind/);
+assert.match(html, /Running Optimize again continues from the strongest layouts already found/);
+assert.match(html, /certified optimal/);
+assert.match(html, /class="mode-only mode-normal"/);
+assert.match(html, /class="mode-only mode-pro" hidden/);
 assert.doesNotMatch(html, /Pro rules and scoring/i);
 assert.match(
   html,
@@ -211,7 +231,9 @@ assert.match(designSystem, /total lives in the title row, is vertically centered
 assert.match(designSystem, /shared title scales fluidly instead of jumping to a compact size/);
 assert.match(designSystem, /stable scrollbar gutter/);
 assert.match(designSystem, /same canonical `index\.html` shell/);
-assert.match(designSystem, /shared favicon uses the universal yellow accent/);
+assert.match(designSystem, /shared favicon has a transparent background/);
+assert.match(designSystem, /five fixed sizes/);
+assert.match(designSystem, /four semantic color roles/);
 assert.match(designSystem, /browser[\s\S]*zoom, viewport state, shared markup, and responsive behavior cannot drift/);
 assert.match(designSystem, /Board cards inherit the same rank and suit typography in both versions/);
 assert.match(
@@ -236,6 +258,7 @@ assert.match(designSystem, /one `2px` accent border/);
 assert.match(designSystem, /use `8px` vertical padding and a `32px` summary floor/);
 assert.match(designSystem, /Do not use `850` or `900` weights/);
 assert.match(designSystem, /Both modes label the scoring-structure explainer “What counts as a scoring way\?”/);
+assert.match(designSystem, /both modes explicitly invite the player to Optimize again/);
 assert.match(designSystem, /Normal and Pro diagnostics use the same status-card structure and typography/);
 assert.match(designSystem, /Pro is an anytime heuristic/);
 assert.match(

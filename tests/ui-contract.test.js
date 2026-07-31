@@ -74,7 +74,7 @@ assert.match(boardArea, /--frame-arm:\s*9px/);
 assert.match(boardArea, /inline-size:\s*min\(100%,\s*640px,\s*max\(520px,\s*calc\(74dvh - 281px\)\)\)/);
 
 const scoreStripLabels = ruleBody("\\.score-strip span");
-assert.match(scoreStripLabels, /font-size:\s*0\.74rem/);
+assert.match(scoreStripLabels, /font-size:\s*var\(--type-caption\)/);
 assert.match(scoreStripLabels, /white-space:\s*nowrap/);
 assert.doesNotMatch(css, /#resultModeLabel\s*\{/);
 
@@ -95,10 +95,10 @@ assert.match(horizontalRules, /background:\s*var\(--accent\)/);
 const horizontalLabels = ruleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
 
-assert.match(html, /styles\.css\?v=design-system-60/);
-assert.match(html, /src\/modeBoot\.js\?v=mode-shell-11/);
-assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-50/);
-assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-19/);
+assert.match(html, /styles\.css\?v=design-system-61/);
+assert.match(html, /src\/modeBoot\.js\?v=mode-shell-13/);
+assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-52/);
+assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-21/);
 assert.match(
   modeBoot,
   /deepSearchOption\.value = isPro \? "45000" : "30000"/,
@@ -131,7 +131,7 @@ assert.match(modeBoot, /boardArea\.classList\.toggle\("pro-board-area", isPro\)/
 assert.match(html, /class="bucket-panel mode-only mode-normal"/);
 assert.match(html, /class="diagnostics-mode-stack mode-only mode-pro" hidden/);
 assert.match(ruleBody("\\.mode-only\\[hidden\\]"), /display:\s*none !important/);
-assert.match(html, /id="optimizeButton" disabled/);
+assert.match(html, /<button[^>]*id="optimizeButton"[^>]*disabled/);
 assert.match(
   app,
   /renderSelectionState\(\);\s*renderEmptyResult\(\);\s*await loadSeededBestKnown\(\);/,
@@ -141,6 +141,17 @@ assert.doesNotMatch(html, /data-reference-board=/);
 assert.doesNotMatch(html, /Load reference/);
 assert.match(html, /id="attemptScreenshot" type="file" accept="image\/\*"/);
 assert.match(html, /id="confirmAttemptReviewButton"/);
+assert.match(html, /Optional: add a grid, or upload a screenshot to fill it\./);
+assert.match(html, /data-empty-copy="Optional: add a grid, or upload a screenshot to fill it\."/);
+assert.match(app, /attemptSummary\.textContent = attemptSummary\.dataset\.emptyCopy/);
+assert.match(proApp, /attemptSummary\.textContent = attemptSummary\.dataset\.emptyCopy/);
+assert.doesNotMatch(`${html}\n${app}\n${proApp}`, /Optional baseline:/);
+assert.match(
+  html,
+  /data-continuation-copy="Optimize again to continue searching\."/,
+);
+assert.match(app, /optimizeButton\.dataset\.continuationCopy/);
+assert.match(proApp, /optimizeButton\.dataset\.continuationCopy/);
 assert.doesNotMatch(html, /id="optimizerTimer" aria-live=/);
 assert.match(proApp, /const DEAL_SIZE = 30;/);
 assert.match(proApp, /const GRID_SIZE = 25;/);

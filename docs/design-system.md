@@ -40,8 +40,8 @@ Use these tokens before introducing a literal spacing value.
 
 ## Header
 
-- The shared favicon uses the universal yellow accent as its tile, the navy corner-frame mark, and the Joker's
-  purple star. Do not use a black or near-black tile for either mode.
+- The shared favicon has a transparent background, the universal yellow accent for its corner-frame mark, and the
+  Joker's purple star. Do not add a filled tile behind it.
 - The header has no divider line between it and the workspace.
 - The title is a single shared `.topbar h1` component using `--header-title-size`; do not style it through a
   mode-specific selector or an unscoped page-heading override. Root text scaling is fixed at `100%` so switching
@@ -85,6 +85,8 @@ Use these tokens before introducing a literal spacing value.
 - Open manual-picker and grid-attempt disclosures keep the standard `12px` nested-box inset. When collapsed, they
   use `8px` vertical padding and a `32px` summary floor so completed input sections remain present without dominating
   the search controls.
+- Grid-attempt guidance uses the shared body size with `1.45` line height and concise wording. It may wrap naturally
+  in the narrow picker column, but must keep readable space between the correction fields and actions.
 - Score summary cards use `12px` padding and `12px` gaps.
 - Diagnostics content and its nested status cards use `12px` padding and gaps.
 - Normal and Pro diagnostics use the same status-card structure and typography. Mode-specific search facts may
@@ -94,12 +96,18 @@ Use these tokens before introducing a literal spacing value.
 
 ## Typography
 
+- Supporting interface copy uses five fixed sizes: `--type-caption` (`0.72rem`), `--type-meta` (`0.78rem`),
+  `--type-body` (`0.86rem`), `--type-heading` (`1rem`), and `--type-display` (`1.5rem`). Dense correction-editor
+  slot labels may use the shared `--type-micro` (`0.62rem`) token. Card faces, board annotations, responsive score
+  values, and the page title keep their component-specific fluid scales.
+- Interface copy uses four semantic color roles: primary `--ink`, secondary `--muted`, warning `--accent-ink`, and
+  success `--success-ink`. Suit colors are reserved for playing-card information rather than general interface copy.
 - Body copy, explanatory disclosure copy, runtime text, and status messages use regular `400` weight.
 - Secondary metadata uses `500`; compact labels may use `600`; section headings, control labels, and primary actions
   use `700`.
 - Reserve `800` for primary numeric totals, card faces, and score annotations. Do not use `850` or `900` weights;
   they flatten the hierarchy and make secondary information compete with results.
-- Score-strip labels all use the same `0.74rem` size, weight, letter spacing, and capitalization.
+- Score-strip labels all use the shared caption size, weight, letter spacing, and capitalization.
 - Dynamic labels such as “Best Found,” “Best Possible,” and “Grid Attempt” must not receive a smaller one-off style.
 - Desktop score-strip labels remain on one line.
 - Values use tabular numerals where appropriate.
@@ -112,8 +120,11 @@ Use these tokens before introducing a literal spacing value.
 
 - Both modes label the scoring-structure explainer “What counts as a scoring way?” It explains how results are
   grouped and deduplicated; it does not repeat Puzzmo's game rules or hand-score reference.
-- Normal and Pro use parallel scoring-way language. Mode-specific copy may clarify proof versus anytime-search
-  behavior, but not introduce a separate typography or layout.
+- Normal and Pro share the same plain-language explanation: equivalent row/column swaps, non-contributing card
+  moves, and scoring-neutral suit swaps are not enumerated as separate results. The solver maximizes dollar value
+  first and keeps representatives only for meaningfully different hand-type combinations. Use a concrete tied-score
+  example to contrast a different hand-type mix with a rotated equivalent. Mode-specific copy may clarify certified
+  versus anytime-search behavior, but not introduce a separate typography or layout.
 - Diagnostics and scoring-way body copy are regular weight. Their summaries remain visually discoverable without
   making every line beneath them bold.
 
@@ -155,6 +166,8 @@ Use these tokens before introducing a literal spacing value.
 - Optimize is resumable for the current page session. Repeating it for the same deal keeps prior leaders, advances
   to a fresh deterministic search stream, and skips the structural opening portfolio already completed on the first
   pass. Changing modes or deals uses that deal's own history; a certified Normal optimum still loads immediately.
+- After a non-certified search, both modes explicitly invite the player to Optimize again and continue from the
+  strongest layouts already found.
 - Normal and Pro share the same grouped result controls. One pill represents a tied outcome with the same total,
   hand count, and quality count. Different hand-type profiles for that outcome appear as scoring-way variants;
   rotated, row-switched, column-switched, or otherwise equivalent placements do not receive separate pills or

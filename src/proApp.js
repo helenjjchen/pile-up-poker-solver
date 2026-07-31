@@ -360,8 +360,7 @@ function renderAttemptSummary() {
   confirmAttemptReviewButton.disabled = searchInProgress || recognitionInProgress;
   if (validation.cards.length === 0) {
     attemptScoreBadge.textContent = "Optional";
-    attemptSummary.textContent =
-      "Optional baseline: add a player grid here, or upload a screenshot to fill it automatically.";
+    attemptSummary.textContent = attemptSummary.dataset.emptyCopy;
     return;
   }
   if (!validation.unique) {
@@ -781,8 +780,8 @@ function renderEmptyResult() {
   resultHands.textContent = "0";
   resultMultiplier.textContent = "×1";
   resultQuality.textContent = "0";
-  runtimeInfo.textContent = "Not run";
-  searchSummary.textContent = "No search run yet";
+  runtimeInfo.textContent = "";
+  searchSummary.textContent = searchSummary.dataset.emptyCopy;
   boardGrid.innerHTML = Array.from({ length: GRID_SIZE }, () => renderPlayingCard(null)).join("");
   discardCards.innerHTML = Array.from({ length: DISCARD_SIZE }, () => renderPlayingCard(null)).join("");
   boardGrid.classList.remove("has-corner-hand");
@@ -1191,7 +1190,8 @@ async function optimize() {
     statusLine.textContent =
       `${continuationIndex > 0 ? `Continuation pass ${continuationIndex + 1} · ` : ""}` +
       `${result.stopped ? "Search stopped" : "Best found"}: ` +
-      `${money(latestResult.best.score.total)} with ${latestResult.best.score.handCount} hands.${improvement}`;
+      `${money(latestResult.best.score.total)} with ${latestResult.best.score.handCount} hands.${improvement} ` +
+      optimizeButton.dataset.continuationCopy;
     if (result.stopped) timerOutcome = "Stopped";
   } catch (error) {
     if (generation !== searchGeneration) return;

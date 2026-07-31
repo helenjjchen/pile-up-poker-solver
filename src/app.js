@@ -376,8 +376,7 @@ function renderAttemptSummary() {
 
   if (validation.filledSlots === 0) {
     attemptScoreBadge.textContent = "Optional";
-    attemptSummary.textContent =
-      "Optional baseline: add a player grid here, or upload a screenshot to fill it automatically.";
+    attemptSummary.textContent = attemptSummary.dataset.emptyCopy;
     return;
   }
 
@@ -2113,7 +2112,7 @@ function renderEmptyResult() {
   resultHands.textContent = "0";
   resultMultiplier.textContent = "×1";
   resultQuality.textContent = "0";
-  runtimeInfo.textContent = "Not run";
+  runtimeInfo.textContent = "";
   boardGrid.innerHTML = Array.from({ length: 16 }, () => renderPlayingCard(null)).join("");
   discardCards.innerHTML = Array.from({ length: 4 }, () => renderPlayingCard(null)).join("");
   renderEmptyBoardAnnotations();
@@ -2528,7 +2527,9 @@ async function optimize() {
     const completedPassLabel =
       continuationIndex > 0 ? `Continuation pass ${continuationIndex + 1} · ` : "";
     statusLine.textContent =
-      `${completedPassLabel}${resultStatus}: ${money(latestResult.best.score.total)}.${uploadComparison} Bucket bounds shown below.`;
+      `${completedPassLabel}${resultStatus}: ${money(latestResult.best.score.total)}.${uploadComparison} ` +
+      `Bucket bounds shown below.` +
+      (latestResult.exact ? "" : ` ${optimizeButton.dataset.continuationCopy}`);
     renderResult();
     finishOptimizerTimer(latestResult.exact ? "Certified" : "Done");
   } catch (error) {
