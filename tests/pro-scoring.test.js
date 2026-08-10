@@ -335,7 +335,56 @@ assert.ok(
   mixedScreenshotRestartSearch.beamAttempts > 0,
   "a Pro screenshot run should spend a bounded opening lane on coordinated multi-swap improvements",
 );
+assert.ok(
+  mixedScreenshotRestartSearch.runnerUpCount > 0,
+  "a Pro screenshot run should retain distinct runner-up trajectories below its incumbent floor",
+);
 assertResultMatchesDeal(mixedScreenshotRestartSearch, mixedScreenshotDeal);
+
+const highFloorScreenshotGrid = [
+  "4D", "AD", "2D", "3D", "5D",
+  "KC", "AH", "6S", "10C", "KD",
+  "4C", "7C", "6D", "3C", "5C",
+  "4H", "AC", "2S", "3H", "5S",
+  "JK", "7S", "6H", "10H", "8D",
+];
+const highFloorScreenshotDiscard = ["JH", "9C", "9H", "9S", "9D"];
+const highFloorScreenshotScore = scoreProPlacement(
+  highFloorScreenshotGrid,
+  highFloorScreenshotDiscard,
+);
+assert.equal(highFloorScreenshotScore.total, 24060);
+assert.equal(highFloorScreenshotScore.handCount, 12);
+assert.equal(highFloorScreenshotScore.qualityHandCount, 11);
+const highFloorInitialSession = createProHeuristicSession(
+  [...highFloorScreenshotGrid, ...highFloorScreenshotDiscard],
+  {
+    timeLimitMs: 1000,
+    maxAnnealingAttempts: 1000,
+    maxSolutions: 8,
+    incumbent: {
+      grid: highFloorScreenshotGrid,
+      discard: highFloorScreenshotDiscard,
+      score: highFloorScreenshotScore,
+      source: "uploaded screenshot floor",
+    },
+  },
+);
+const highFloorInitialPortfolio = finishProHeuristicSession(
+  highFloorInitialSession,
+);
+assert.equal(highFloorInitialPortfolio.best.score.total, 24060);
+assert.ok(
+  highFloorInitialPortfolio.solutions.length > 1,
+  "a strong uploaded floor should still expose the best distinct alternatives already available to the search",
+);
+assert.ok(highFloorInitialPortfolio.runnerUpCount > 0);
+assert.ok(
+  highFloorInitialPortfolio.solutions
+    .slice(1)
+    .some((solution) => solution.source.includes("runner-up")),
+  "the visible high-floor portfolio should include a retained runner-up instead of only the uploaded winner",
+);
 
 const proDeal = [...referenceBGrid, ...referenceBDiscard];
 const result = solveProHeuristic(proDeal, {

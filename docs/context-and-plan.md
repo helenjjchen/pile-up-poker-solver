@@ -115,6 +115,9 @@ requested deal.
 - Cache hand evaluations and, after a swap, rescore only touched rows, columns, corner, or discard.
 - Combine greedy refinement with longer annealing trajectories that can cross temporarily worse states.
 - Keep structurally distinct leaders and stream improving incumbents to the UI.
+- Preserve a bounded set of strong, structurally distinct runner-ups separately from the global incumbent. This keeps
+  alternatives informative when an uploaded grid is already unusually strong without diverting the winner-first
+  search or retaining millions of visited placements.
 - Interleave unused structural starts with fresh, coordinated perturbations of the current leader so a first pass
   exploits a strong basin without abandoning the deal-wide portfolio.
 - On repeat Optimize clicks, reuse prior leaders, skip the already-completed deterministic opening, perturb elites,
@@ -132,6 +135,10 @@ buckets are exhausted or safely bounded beneath the incumbent.
 
 The certified sample remains `$15,270`.
 
+Normal's certified-result shortcut is still a complete Optimize lifecycle: it preserves the player's grid, renders
+the saved proof result, and releases the busy state in a guaranteed cleanup path. Regression contracts require the
+control to be available again after both an instant certified load and a regular continuation pass.
+
 ### Pro
 
 `src/proHeuristicSolver.js` searches the much larger `30`-card placement problem cooperatively in a Web Worker. It
@@ -144,11 +151,13 @@ Regression contracts include:
 - the mixed rank/suit QA deal reaches at least `$25,140` from scratch;
 - the `$22,200` structural benchmark remains discoverable;
 - reference deals remain deterministic at their explicit attempt budgets;
-- continuation runs never move the displayed best backward.
+- continuation runs never move the displayed best backward;
 - an uploaded/saved incumbent is refined before broad Pro exploration and is the
   first protected trajectory;
 - the mixed `$22,260` screenshot deal reaches the known `$24,450` leader through
   incumbent-aware multi-swap look-ahead;
+- the uploaded `$24,060` high-floor deal remains the leader while Pro retains strong
+  distinct trajectory endpoints beneath it instead of falling back to an `$18,300` second result;
 
 More detail is in [solver-search-explanation.md](./solver-search-explanation.md).
 

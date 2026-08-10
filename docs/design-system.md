@@ -166,6 +166,9 @@ Use these tokens before introducing a literal spacing value.
 - Optimize is resumable for the current page session. Repeating it for the same deal keeps prior leaders, advances
   to a fresh deterministic search stream, and skips the structural opening portfolio already completed on the first
   pass. Changing modes or deals uses that deal's own history; a certified Normal optimum still loads immediately.
+- Every Optimize exit path restores the shared control to its enabled “Optimize” state once work has stopped. This
+  includes completed searches, instant certified Normal results, user-stopped Pro searches, and display or search
+  failures. A rendering error must never leave either mode stranded in an “Optimizing…” state.
 - After a non-certified search, both modes explicitly invite the player to Optimize again and continue from the
   strongest layouts already found.
 - Normal and Pro share the same grouped result controls. One pill represents a tied outcome with the same total,
@@ -176,6 +179,11 @@ Use these tokens before introducing a literal spacing value.
   Label that selectable result “Your grid” in both versions. It counts toward the visible result limit (12 Normal
   outcome groups or 8 Pro outcome groups); when it would otherwise fall below that limit, replace the lowest unpinned
   result instead of hiding the player's board.
+- Winner tracking and alternative tracking are separate. The solver always prioritizes the highest dollar value, but
+  it also keeps a bounded portfolio of the strongest distinct completed trajectories below that leader. Result pills
+  therefore represent meaningful runner-ups actually found, rather than dropping directly from a strong uploaded
+  floor to weak structural seeds. Normal records each completed optimized trajectory; Pro records bounded trajectory,
+  refinement, and incumbent-look-ahead endpoints. Equivalent outcome profiles remain collapsed.
 - Search status uses plain outcome language: current best, elapsed time, and the dollar difference from an uploaded
   placement when one exists.
 - Pro is an anytime heuristic: it displays improving placements during the selected budget and lets the player stop

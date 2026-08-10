@@ -96,9 +96,9 @@ const horizontalLabels = ruleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
 
 assert.match(html, /styles\.css\?v=design-system-61/);
-assert.match(html, /src\/modeBoot\.js\?v=mode-shell-13/);
-assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-52/);
-assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-21/);
+assert.match(html, /src\/modeBoot\.js\?v=mode-shell-15/);
+assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-53/);
+assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-22/);
 assert.match(
   modeBoot,
   /deepSearchOption\.value = isPro \? "45000" : "30000"/,
@@ -113,10 +113,15 @@ assert.match(app, /recognizerFeedback\.js\?v=recognizer-feedback-1/);
 assert.match(proApp, /recognizerFeedback\.js\?v=recognizer-feedback-1/);
 assert.match(app, /solutionPortfolio\.js\?v=solution-portfolio-1/);
 assert.match(proApp, /solutionPortfolio\.js\?v=solution-portfolio-1/);
-assert.match(proApp, /proHeuristicSolver\.js\?v=pro-search-8/);
-assert.match(proApp, /proHeuristicWorker\.js\?v=pro-solver-12/);
+assert.match(proApp, /proHeuristicSolver\.js\?v=pro-search-9/);
+assert.match(proApp, /proHeuristicWorker\.js\?v=pro-solver-13/);
 assert.match(app, /solutionProfiles\.js\?v=solution-profiles-2/);
 assert.match(proApp, /solutionProfiles\.js\?v=solution-profiles-2/);
+assert.match(
+  app,
+  /scoringHandSummary,\s*solutionOutcomeKey,/,
+  "Normal attempt summaries must import the outcome key used to count higher results",
+);
 assert.match(html, /id="normalModeLink" href="\.\/index\.html"/);
 assert.match(html, /id="proModeLink" href="\.\/index\.html\?mode=pro"/);
 assert.match(proHtml, /window\.location\.replace\("\.\/index\.html\?mode=pro"\)/);
@@ -300,6 +305,11 @@ assert.match(
   app,
   /latestResult = mergeAttemptIntoResult\(\s*resultFromBestKnown\(bestKnown, \{ exact: true \}\),\s*attemptSolution,/,
   "Normal's certified-result shortcut should still retain the player's grid",
+);
+assert.match(
+  app,
+  /if \(hasCertifiedPlacement\) \{[\s\S]*?try \{[\s\S]*?renderResult\(\);[\s\S]*?finally \{[\s\S]*?optimizerRunning = false;[\s\S]*?optimizeButton\.textContent = "Optimize";/,
+  "Normal's certified shortcut must always release the Optimize control after rendering",
 );
 assert.match(
   app,

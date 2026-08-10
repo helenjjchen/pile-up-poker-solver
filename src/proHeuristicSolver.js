@@ -12,6 +12,7 @@ import {
   scoreProPlacement,
 } from "./proScoring.js";
 import {
+  solutionOutcomeProfileKey,
   uniqueSolutionsByOutcomeProfile,
 } from "./solutionProfiles.js?v=solution-profiles-2";
 
@@ -2222,6 +2223,45 @@ function placementKey(solution) {
   return `${solution.grid.join("|")}::${solution.discard.slice().sort().join("|")}`;
 }
 
+function trimRunnerUpSolutions(session) {
+  if (session.runnerUpSolutions.size <= session.maxRunnerUpSolutions) return;
+  const retained = [...session.runnerUpSolutions.entries()]
+    .sort((first, second) =>
+      compareProScores(second[1].score, first[1].score),
+    )
+    .slice(0, session.maxRunnerUpSolutions);
+  session.runnerUpSolutions.clear();
+  retained.forEach(([key, solution]) => {
+    session.runnerUpSolutions.set(key, solution);
+  });
+}
+
+function archiveRunnerUpSolution(session, solution) {
+  if (!solution?.score) return;
+  const profileKey = solutionOutcomeProfileKey(solution);
+  if (!profileKey) return;
+  const existing = session.runnerUpSolutions.get(profileKey);
+  if (!existing || compareProScores(solution.score, existing.score) > 0) {
+    session.runnerUpSolutions.set(profileKey, solution);
+    trimRunnerUpSolutions(session);
+  }
+}
+
+function archiveRunnerUpState(session, state, source) {
+  if (!Array.isArray(state) || state.length !== 30) return;
+  archiveRunnerUpSolution(session, stateToSolution(state, source));
+}
+
+function archiveCurrentTrajectory(session) {
+  archiveRunnerUpState(
+    session,
+    session.trajectoryBestState,
+    "Pro trajectory runner-up",
+  );
+  session.trajectoryBestState = null;
+  session.trajectoryBestEvaluation = null;
+}
+
 function optimizeCornerPermutation(solution) {
   let best = null;
   for (let centerRow = 0; centerRow < 5; centerRow += 1) {
@@ -2329,6 +2369,7 @@ function perturbLeader(solution, random) {
 }
 
 function startRestart(session) {
+  archiveCurrentTrajectory(session);
   const revisitLeader =
     session.best &&
     session.restartCount > 0 &&
@@ -2350,6 +2391,8 @@ function startRestart(session) {
       session.maxAnnealingAttempts <= 60_000,
   );
   session.currentFitness = session.currentEvaluation.fitness;
+  session.trajectoryBestState = [...seed];
+  session.trajectoryBestEvaluation = session.currentEvaluation;
   session.iteration = 0;
   session.iterationBudget =
     session.maxAnnealingAttempts !== null &&
@@ -2385,6 +2428,7 @@ function startRefinement(session, resumeAnnealing = false) {
     const optimized = optimizeCornerPermutation(solution);
     uniqueSeeds.set(placementKey(optimized), optimized);
     session.bestSolutions.set(placementKey(optimized), optimized);
+    archiveRunnerUpSolution(session, optimized);
     if (compareProScores(optimized.score, session.best.score) > 0) {
       session.best = optimized;
     }
@@ -2479,6 +2523,11 @@ function finishBeamDepth(session) {
   session.beamSecondIndex = 1;
 
   if (session.beam.length && session.beamDepth < session.beamMaxDepth) return;
+  archiveRunnerUpState(
+    session,
+    session.beam[0]?.state,
+    "Pro incumbent look-ahead runner-up",
+  );
   session.beamSeedIndex += 1;
   startBeamSeed(session);
 }
@@ -2557,6 +2606,11 @@ function finishRefinementPass(session) {
     startRefinementSeed(session, session.refinementBase);
     return;
   }
+
+  archiveRunnerUpSolution(session, {
+    ...session.refinementBase,
+    source: "Pro refined runner-up",
+  });
 
   session.refinementQueueIndex += 1;
   if (session.refinementQueueIndex < session.refinementQueue.length) {
@@ -2665,6 +2719,8 @@ export function createProHeuristicSession(cardIds, options = {}) {
     Number.isFinite(requestedMaxSolutions) && requestedMaxSolutions > 0
       ? Math.floor(requestedMaxSolutions)
       : 8;
+  const maxRunnerUpSolutions = Math.max(32, maxSolutions * 6);
+  const runnerUpSolutions = new Map();
   const requestedRefinementSeeds = Number(options.maxRefinementSeeds ?? 8);
   const maxRefinementSeeds =
     Number.isFinite(requestedRefinementSeeds) && requestedRefinementSeeds > 0
@@ -2732,6 +2788,7 @@ export function createProHeuristicSession(cardIds, options = {}) {
     random,
     starts,
     bestSolutions,
+    runnerUpSolutions,
     best,
     hasValidIncumbent,
     startIndex: 0,
@@ -2747,11 +2804,14 @@ export function createProHeuristicSession(cardIds, options = {}) {
     current: null,
     currentEvaluation: null,
     currentFitness: 0,
+    trajectoryBestState: null,
+    trajectoryBestEvaluation: null,
     iteration: 0,
     iterationBudget: 0,
     attempts: 0,
     annealingAttempts: 0,
     maxSolutions,
+    maxRunnerUpSolutions,
     maxRefinementSeeds,
     phase: "annealing",
     incumbentBeamPending: hasValidIncumbent,
@@ -2781,6 +2841,11 @@ export function createProHeuristicSession(cardIds, options = {}) {
     refinementExhausted: false,
     done: false,
   };
+  starts
+    .slice(0, Math.max(maxRefinementSeeds * 2, 16))
+    .forEach((state) => {
+      archiveRunnerUpState(session, state, "Pro structured runner-up");
+    });
   if (hasValidIncumbent) startLeaderRefinement(session);
   return session;
 }
@@ -2803,6 +2868,7 @@ export function stepProHeuristicSession(session, sliceMs = 16) {
         ? performance.now() >= session.annealingDeadline
         : session.annealingAttempts >= session.maxAnnealingAttempts;
     if (annealingComplete) {
+      archiveCurrentTrajectory(session);
       startRefinement(session);
       continue;
     }
@@ -2811,6 +2877,7 @@ export function stepProHeuristicSession(session, sliceMs = 16) {
       session.annealingAttempts >= session.checkpointAnnealingAttempts
     ) {
       session.checkpointRefinementStarted = true;
+      archiveCurrentTrajectory(session);
       startRefinement(session, true);
       continue;
     }
@@ -2818,6 +2885,7 @@ export function stepProHeuristicSession(session, sliceMs = 16) {
       session.portfolioIndex === 0 &&
       session.annealingAttempts >= session.portfolioSwitchAttempt;
     if (switchPortfolio) {
+      archiveCurrentTrajectory(session);
       session.portfolioIndex = 1;
       session.random = mulberry32((session.portfolioSeed ^ 0xd3a2646c) >>> 0);
       // Keep the second lane independent of the first so longer budgets explore
@@ -2877,6 +2945,17 @@ export function stepProHeuristicSession(session, sliceMs = 16) {
     session.annealingAttempts += 1;
     session.iteration += 1;
 
+    if (
+      !session.trajectoryBestEvaluation ||
+      compareProScores(
+        candidateEvaluation,
+        session.trajectoryBestEvaluation,
+      ) > 0
+    ) {
+      session.trajectoryBestState = [...candidateState];
+      session.trajectoryBestEvaluation = candidateEvaluation;
+    }
+
     if (accept) {
       session.currentState = candidateState;
       session.current = null;
@@ -2898,7 +2977,10 @@ export function stepProHeuristicSession(session, sliceMs = 16) {
     }
   }
 
-  if (performance.now() >= session.deadline) session.done = true;
+  if (performance.now() >= session.deadline) {
+    archiveCurrentTrajectory(session);
+    session.done = true;
+  }
   return session.done;
 }
 
@@ -2906,7 +2988,10 @@ export function finishProHeuristicSession(session) {
   if (!session.best) session.best = stateToSolution(session.starts[0] ?? session.cardIds);
   session.bestSolutions.set(placementKey(session.best), session.best);
   const solutions = uniqueSolutionsByOutcomeProfile(
-    [...session.bestSolutions.values()]
+    [
+      ...session.bestSolutions.values(),
+      ...session.runnerUpSolutions.values(),
+    ]
       .sort((a, b) => compareProScores(b.score, a.score)),
   )
     .slice(0, session.maxSolutions);
@@ -2921,11 +3006,12 @@ export function finishProHeuristicSession(session) {
     beamAttempts: session.beamAttempts,
     refinementPasses: session.refinementPasses,
     refinementExhausted: session.refinementExhausted,
+    runnerUpCount: session.runnerUpSolutions.size,
     leaderRestartCount: session.leaderRestartCount,
     continuationIndex: session.continuationIndex,
     exact: false,
     searchOrder:
-      "A score-competing portfolio combines rank-core quality partitions, suit-row and ordered-hand seeds, unrestricted annealing, corner refinement, and improving swaps.",
+      "A score-competing portfolio combines rank-core quality partitions, suit-row and ordered-hand seeds, unrestricted annealing, corner refinement, and improving swaps. A bounded runner-up archive retains the strongest distinct completed trajectories below the leader.",
   };
 }
 

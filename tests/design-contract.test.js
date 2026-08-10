@@ -252,6 +252,10 @@ assert.match(designSystem, /Do not include the screenshot, filename, or card ide
 assert.match(designSystem, /never disables Optimize for a complete, duplicate-free deal/);
 assert.match(
   designSystem,
+  /Every Optimize exit path restores[\s\S]*enabled “Optimize” state[\s\S]*rendering error must never leave either mode stranded/,
+);
+assert.match(
+  designSystem,
   /user's decision to run a valid[\s\S]*deal always overrides recognizer uncertainty/,
 );
 assert.match(designSystem, /one `2px` accent border/);

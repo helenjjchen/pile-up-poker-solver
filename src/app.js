@@ -35,6 +35,7 @@ import {
   formatWayCount,
   groupSolutionsByOutcome,
   scoringHandSummary,
+  solutionOutcomeKey,
 } from "./solutionProfiles.js?v=solution-profiles-2";
 import {
   pinnedSolutionPortfolio,
@@ -2360,19 +2361,25 @@ async function optimize() {
     (!attemptSolution || compareScores(bestKnown.score, attemptSolution.score) >= 0);
 
   if (hasCertifiedPlacement) {
-    latestResult = mergeAttemptIntoResult(
-      resultFromBestKnown(bestKnown, { exact: true }),
-      attemptSolution,
-    );
-    activeSolutionIndex = 0;
-    statusLine.textContent = `Certified optimum loaded instantly: ${money(bestKnown.score.total)}.`;
-    renderResult();
-    optimizerRunning = false;
-    optimizeButton.textContent = "Optimize";
-    clearButton.disabled = false;
-    const completedStatus = statusLine.textContent;
-    renderSelectionState();
-    statusLine.textContent = completedStatus;
+    try {
+      latestResult = mergeAttemptIntoResult(
+        resultFromBestKnown(bestKnown, { exact: true }),
+        attemptSolution,
+      );
+      activeSolutionIndex = 0;
+      statusLine.textContent = `Certified optimum loaded instantly: ${money(bestKnown.score.total)}.`;
+      renderResult();
+    } catch (error) {
+      statusLine.textContent =
+        error instanceof Error ? error.message : "Could not display the certified result.";
+    } finally {
+      optimizerRunning = false;
+      optimizeButton.textContent = "Optimize";
+      clearButton.disabled = false;
+      const completedStatus = statusLine.textContent;
+      renderSelectionState();
+      statusLine.textContent = completedStatus;
+    }
     return;
   }
 

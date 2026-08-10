@@ -207,7 +207,9 @@ It does this:
    - fresh random boards provide broad exploration
    - strong structured boards provide productive restarts
    - perturbed elite boards search nearby alternatives without restarting from zero
-7. Store only the best structurally distinct solutions.
+7. Store the winner plus a bounded set of the strongest structurally distinct
+   completed trajectories. This runner-up archive is ranked separately from the
+   incumbent so a strong uploaded floor does not erase useful alternatives.
 
 The fast move evaluator is the main throughput improvement shared with Pro. Normal
 precomputes every possible 4-card hand once; Pro caches the 5-card hands it actually
@@ -251,6 +253,13 @@ session. A second click on Optimize does not replay the first pass:
 4. Pro adds newly perturbed versions of prior leaders plus fresh random restarts.
 5. Normal's exact bucket search also resumes its saved bucket offsets, so proof work
    continues rather than restarting the current bucket from the beginning.
+
+A certified Normal deal is the one intentional exception to starting another
+search: the solver already has a proof that no stronger layout exists, so each
+Optimize click reloads that certified result immediately. It still completes the
+same control lifecycle as a timed pass. Whether rendering succeeds or fails, the
+busy flag is cleared and the button returns to “Optimize” so the interface cannot
+be stranded by a display error.
 
 The solver intentionally avoids retaining a giant exact set of every transient board:
 millions of full placement keys would consume memory and be expensive to transfer
@@ -484,15 +493,19 @@ Pro currently uses a best-found anytime search:
    launch an independent trajectory from it. This brings the useful behavior
    of a later continuation pass into the first run without abandoning unused
    structural families.
-9. Refine multiple distinct leaders at the end, then group equivalent outcomes
-   before rendering result pills.
+9. Refine multiple distinct leaders at the end. Keep a bounded runner-up archive
+   from completed annealing trajectories, refinement endpoints, and beam
+   look-ahead endpoints, then group equivalent outcomes before rendering result
+   pills.
 
 The worker runs this search in short cooperative slices and streams a result only
 when it improves or enough time has passed for useful progress feedback. The UI
 can stop the worker early without losing the strongest placement already posted.
 The screenshot remains pinned for comparison, while the other result pills show
 the strongest distinct alternatives actually found—even when some are below the
-uploaded score.
+uploaded score. Winner tracking stays separate from this archive: a runner-up
+cannot displace the current best, and archive maintenance runs only at bounded
+trajectory/refinement checkpoints rather than on every visited placement.
 
 Repeat Optimize clicks pass earlier leaders back into the worker, skip the
 already-completed opening portfolio, perturb those leaders, and select a new
