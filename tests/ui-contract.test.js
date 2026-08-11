@@ -96,9 +96,9 @@ const horizontalLabels = ruleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
 
 assert.match(html, /styles\.css\?v=design-system-61/);
-assert.match(html, /src\/modeBoot\.js\?v=mode-shell-15/);
-assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-53/);
-assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-22/);
+assert.match(html, /src\/modeBoot\.js\?v=mode-shell-16/);
+assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-54/);
+assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-23/);
 assert.match(
   modeBoot,
   /deepSearchOption\.value = isPro \? "45000" : "30000"/,
@@ -253,13 +253,13 @@ assert.match(solutionPortfolio, /export function pinnedSolutionPortfolio/);
 assert.match(solutionPortfolio, /\[\.\.\.pinnedCandidates, \.\.\.candidates\]/);
 assert.match(
   proApp,
-  /prepareSolverResult\(progress, incumbent, dealCards, attempt\)/,
-  "Pro progress results should retain the uploaded grid as a visible candidate",
+  /prepareSolverResult\(\s*progress,\s*incumbent,\s*dealCards,\s*attempt,\s*searchHistory\?\.solutions \?\? \[\],/,
+  "Pro progress results should retain the uploaded grid and prior-pass portfolio",
 );
 assert.match(
   proApp,
-  /prepareSolverResult\(result, incumbent, dealCards, attempt\)/,
-  "Pro final results should retain the uploaded grid as a visible candidate",
+  /prepareSolverResult\(\s*result,\s*incumbent,\s*dealCards,\s*attempt,\s*searchHistory\?\.solutions \?\? \[\],/,
+  "Pro final results should retain the uploaded grid and prior-pass portfolio",
 );
 assert.match(
   proApp,
@@ -331,6 +331,11 @@ for (const modeApp of [app, proApp]) {
   );
 }
 assert.match(app, /initialPlacements:\s*\[[\s\S]*?searchHistory\?\.solutions/);
+assert.match(
+  app,
+  /mergePriorSolutionsIntoResult\(\s*latestResult,\s*searchHistory\?\.solutions \?\? \[\],/,
+  "Normal should merge prior-pass solutions back into every continuation result",
+);
 assert.match(proApp, /priorSolutions:\s*searchHistory\?\.solutions \?\? \[\]/);
 
 const normalOptimizeInputs = app.match(
@@ -345,6 +350,12 @@ const normalOptimizeAttempt = app.match(
 )?.[1];
 assert.ok(normalOptimizeAttempt);
 assert.doesNotMatch(normalOptimizeAttempt, /currentScreenshotScoreMismatch|attemptReviewCount/);
+assert.match(normalOptimizeAttempt, /const preserveVisiblePortfolio = Boolean\(/);
+assert.match(
+  normalOptimizeAttempt,
+  /if \(!preserveVisiblePortfolio\) showAttemptPlacement\(\);/,
+  "Normal repeat Optimize should not replace a same-deal result portfolio with the uploaded grid",
+);
 
 const proSelectionState = proApp.match(
   /function renderSelectionState\(\) \{([\s\S]*?)\n\}\n\nfunction handAnnotationLabel/,

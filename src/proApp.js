@@ -972,15 +972,25 @@ function nextAnimationFrame() {
   return new Promise((resolve) => window.requestAnimationFrame(resolve));
 }
 
-function prepareSolverResult(result, incumbent, requestedCardIds, pinnedAttempt = null) {
+function prepareSolverResult(
+  result,
+  incumbent,
+  requestedCardIds,
+  pinnedAttempt = null,
+  priorSolutions = [],
+) {
   const solverCandidates = [...(result?.solutions ?? [])];
   if (result?.best) solverCandidates.push(result.best);
   const normalizedSolverCandidates = solverCandidates
     .map((solution) => normalizeProSolution(solution, requestedCardIds))
     .filter(Boolean);
   const normalizedIncumbent = normalizeProSolution(incumbent, requestedCardIds);
+  const normalizedPriorSolutions = priorSolutions
+    .map((solution) => normalizeProSolution(solution, requestedCardIds))
+    .filter(Boolean);
   const normalizedCandidates = [
     ...normalizedSolverCandidates,
+    ...normalizedPriorSolutions,
     ...(normalizedIncumbent ? [normalizedIncumbent] : []),
   ];
   const normalizedAttempt = normalizeProSolution(pinnedAttempt, requestedCardIds);
@@ -1133,7 +1143,13 @@ async function optimize() {
       const activeKey = placementKey(
         latestResult?.solutions?.[activeSolutionIndex] ?? latestResult?.best,
       );
-      latestResult = prepareSolverResult(progress, incumbent, dealCards, attempt);
+      latestResult = prepareSolverResult(
+        progress,
+        incumbent,
+        dealCards,
+        attempt,
+        searchHistory?.solutions ?? [],
+      );
       if (!latestResult.best) return;
       const preservedIndex = latestResult.solutions.findIndex(
         (solution) => placementKey(solution) === activeKey,
@@ -1165,7 +1181,13 @@ async function optimize() {
       onProgress,
     );
     if (generation !== searchGeneration) return;
-    latestResult = prepareSolverResult(result, incumbent, dealCards, attempt);
+    latestResult = prepareSolverResult(
+      result,
+      incumbent,
+      dealCards,
+      attempt,
+      searchHistory?.solutions ?? [],
+    );
     if (!latestResult.best || latestResult.solverResultRejected) {
       throw new Error("The Pro solver returned a placement for the wrong deal.");
     }

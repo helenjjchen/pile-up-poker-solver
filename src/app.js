@@ -631,11 +631,16 @@ function confirmAttemptReview() {
 async function optimizeAttemptCards() {
   const validation = attemptValidation();
   if (!validation.valid) return;
+  const preserveVisiblePortfolio = Boolean(
+    validation.matchesSelectedDeal &&
+    latestResult &&
+    !latestResult.isAttemptView,
+  );
   selectAttemptCardsAsDeal();
-  activeSolutionIndex = 0;
+  if (!preserveVisiblePortfolio) activeSolutionIndex = 0;
   resetOptimizerTimer();
   renderSelectionState();
-  showAttemptPlacement();
+  if (!preserveVisiblePortfolio) showAttemptPlacement();
   await optimize();
 }
 
@@ -1118,6 +1123,39 @@ function mergeAttemptIntoResult(result, attemptSolution) {
     incumbentTotal: Math.max(result.incumbentTotal ?? 0, attemptSolution.score.total),
     usedAttemptLowerBound: compareScores(attemptSolution.score, result.best.score) > 0,
     playerAttemptKey: solutionPlacementKey(attemptSolution),
+  };
+}
+
+function mergePriorSolutionsIntoResult(result, priorSolutions = []) {
+  if (!result?.best || priorSolutions.length === 0) return result;
+
+  const mergedSolutions = uniqueSortedSolutions([
+    result.best,
+    ...(result.solutions ?? []),
+    ...priorSolutions,
+  ]).slice(0, 24);
+  const bestByHandCount = (result.bestByHandCount ?? []).map((bucket) => {
+    const priorBest = mergedSolutions.find(
+      (solution) => solution.score.handCount === bucket.handCount,
+    );
+    if (!priorBest || (bucket.total !== null && bucket.total >= priorBest.score.total)) {
+      return bucket;
+    }
+    return {
+      ...bucket,
+      total: priorBest.score.total,
+      base: priorBest.score.base,
+      qualityHandCount: priorBest.score.qualityHandCount,
+      source: priorBest.source,
+      status: bucket.status === "proven" ? "proven" : "found",
+    };
+  });
+
+  return {
+    ...result,
+    best: mergedSolutions[0],
+    solutions: mergedSolutions,
+    bestByHandCount,
   };
 }
 
@@ -2415,6 +2453,10 @@ async function optimize() {
       continuationIndex,
       fastMode: true,
     });
+    latestResult = mergePriorSolutionsIntoResult(
+      latestResult,
+      searchHistory?.solutions ?? [],
+    );
     latestResult = mergeAttemptIntoResult(latestResult, attemptSolution);
     latestResult = mergeBestKnownIntoResult(latestResult, bestKnown);
     const exactStartedAt = performance.now();

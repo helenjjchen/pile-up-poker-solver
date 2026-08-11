@@ -122,6 +122,9 @@ requested deal.
   exploits a strong basin without abandoning the deal-wide portfolio.
 - On repeat Optimize clicks, reuse prior leaders, skip the already-completed deterministic opening, perturb elites,
   and advance a deal-specific continuation seed.
+- Keep the prior pass's visible portfolio mounted throughout a continuation. Normal no longer rebuilds the result
+  panel from the uploaded grid before searching, and both modes merge prior leaders into progress and final payloads
+  so a partial worker update cannot hide an already-found layout.
 
 Structural families are search priorities, never correctness assumptions. Four-suit layouts can be excellent but do
 not monopolize the search; unrestricted restarts remain in every deal portfolio.

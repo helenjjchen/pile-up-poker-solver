@@ -254,6 +254,12 @@ session. A second click on Optimize does not replay the first pass:
 5. Normal's exact bucket search also resumes its saved bucket offsets, so proof work
    continues rather than restarting the current bucket from the beginning.
 
+The previous result portfolio also stays visible for the entire continuation. The
+uploaded board remains pinned as “Your grid,” but starting another pass does not
+replace stronger layouts already found with that upload. Normal merges its saved
+leaders into the completed heuristic result before exact proof begins; Pro merges
+them into every streamed progress update and the final worker result.
+
 A certified Normal deal is the one intentional exception to starting another
 search: the solver already has a proof that no stronger layout exists, so each
 Optimize click reloads that certified result immediately. It still completes the

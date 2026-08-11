@@ -166,6 +166,10 @@ Use these tokens before introducing a literal spacing value.
 - Optimize is resumable for the current page session. Repeating it for the same deal keeps prior leaders, advances
   to a fresh deterministic search stream, and skips the structural opening portfolio already completed on the first
   pass. Changing modes or deals uses that deal's own history; a certified Normal optimum still loads immediately.
+- Starting a continuation must not collapse the visible results back to the uploaded grid. The current board and
+  prior result pills remain available while the next pass runs; live progress and the completed result merge newly
+  found placements into that same portfolio. “Your grid” stays pinned for comparison but is never used to replace
+  stronger same-deal results that were already found.
 - Every Optimize exit path restores the shared control to its enabled “Optimize” state once work has stopped. This
   includes completed searches, instant certified Normal results, user-stopped Pro searches, and display or search
   failures. A rendering error must never leave either mode stranded in an “Optimizing…” state.

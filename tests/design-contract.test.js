@@ -256,6 +256,10 @@ assert.match(
 );
 assert.match(
   designSystem,
+  /Starting a continuation must not collapse the visible results back to the uploaded grid[\s\S]*prior result pills remain available/,
+);
+assert.match(
+  designSystem,
   /user's decision to run a valid[\s\S]*deal always overrides recognizer uncertainty/,
 );
 assert.match(designSystem, /one `2px` accent border/);
