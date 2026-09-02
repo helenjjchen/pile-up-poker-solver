@@ -12,7 +12,9 @@ function paeth(left, above, upperLeft) {
   return upperLeft;
 }
 
-// The fixture screenshots are ordinary 8-bit, non-interlaced RGB/RGBA PNGs.
+// The fixture screenshots are non-interlaced RGB/RGBA PNGs. iOS may export
+// visually identical screenshots at either 8 or 16 bits per channel, so this
+// decoder handles both without a native image dependency.
 // Keeping this tiny decoder in-tree makes recognizer regressions runnable with
 // the project's built-in Node runtime rather than a native image dependency.
 export function pngImageData(buffer) {
@@ -42,7 +44,7 @@ export function pngImageData(buffer) {
       const compression = buffer[dataStart + 10];
       const filter = buffer[dataStart + 11];
       const interlace = buffer[dataStart + 12];
-      if (bitDepth !== 8 || ![2, 6].includes(colorType) || compression !== 0 || filter !== 0 || interlace !== 0) {
+      if (![8, 16].includes(bitDepth) || ![2, 6].includes(colorType) || compression !== 0 || filter !== 0 || interlace !== 0) {
         throw new Error("Unsupported PNG fixture format.");
       }
     } else if (type === "IDAT") {
@@ -56,7 +58,9 @@ export function pngImageData(buffer) {
   if (!width || !height || !compressedParts.length) throw new Error("PNG is missing image data.");
 
   const sourceChannels = colorType === 6 ? 4 : 3;
-  const stride = width * sourceChannels;
+  const bytesPerSample = bitDepth / 8;
+  const bytesPerPixel = sourceChannels * bytesPerSample;
+  const stride = width * bytesPerPixel;
   const inflated = inflateSync(Buffer.concat(compressedParts));
   if (inflated.length !== height * (stride + 1)) throw new Error("Unexpected PNG pixel data length.");
 
@@ -71,9 +75,9 @@ export function pngImageData(buffer) {
     for (let x = 0; x < stride; x += 1) {
       const value = inflated[sourceOffset];
       sourceOffset += 1;
-      const left = x >= sourceChannels ? unfiltered[rowStart + x - sourceChannels] : 0;
+      const left = x >= bytesPerPixel ? unfiltered[rowStart + x - bytesPerPixel] : 0;
       const above = y > 0 ? unfiltered[previousRow + x] : 0;
-      const upperLeft = y > 0 && x >= sourceChannels ? unfiltered[previousRow + x - sourceChannels] : 0;
+      const upperLeft = y > 0 && x >= bytesPerPixel ? unfiltered[previousRow + x - bytesPerPixel] : 0;
       let decoded;
       if (filterType === 0) decoded = value;
       else if (filterType === 1) decoded = value + left;
@@ -86,11 +90,17 @@ export function pngImageData(buffer) {
   }
 
   const data = new Uint8ClampedArray(width * height * 4);
-  for (let sourceIndex = 0, targetIndex = 0; sourceIndex < unfiltered.length; sourceIndex += sourceChannels) {
-    data[targetIndex] = unfiltered[sourceIndex];
-    data[targetIndex + 1] = unfiltered[sourceIndex + 1];
-    data[targetIndex + 2] = unfiltered[sourceIndex + 2];
-    data[targetIndex + 3] = sourceChannels === 4 ? unfiltered[sourceIndex + 3] : 255;
+  const sampleAt = (sourceIndex, channel) => {
+    const sampleIndex = sourceIndex + channel * bytesPerSample;
+    if (bytesPerSample === 1) return unfiltered[sampleIndex];
+    const value = (unfiltered[sampleIndex] << 8) | unfiltered[sampleIndex + 1];
+    return Math.round(value / 257);
+  };
+  for (let sourceIndex = 0, targetIndex = 0; sourceIndex < unfiltered.length; sourceIndex += bytesPerPixel) {
+    data[targetIndex] = sampleAt(sourceIndex, 0);
+    data[targetIndex + 1] = sampleAt(sourceIndex, 1);
+    data[targetIndex + 2] = sampleAt(sourceIndex, 2);
+    data[targetIndex + 3] = sourceChannels === 4 ? sampleAt(sourceIndex, 3) : 255;
     targetIndex += 4;
   }
 

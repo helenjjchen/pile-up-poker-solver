@@ -100,7 +100,8 @@ the warning as likely over-sensitive and emits a local `pileup:recognizer-feedba
 review count, and mismatch presence. It never includes the screenshot, filename, or card identities.
 
 Every recognition fix belongs in a labelled fixture test. Current fixtures cover Normal and Pro, light/dark
-screenshots, cropped screenshots, shifts, tilted tray cards, face cards, joker, score OCR, and hand-count OCR.
+screenshots, cropped screenshots, 8- and 16-bit iOS PNG exports, shifts, tilted tray cards, face cards, joker,
+score OCR, and hand-count OCR.
 
 ## Optimizer architecture
 
@@ -153,10 +154,18 @@ Regression contracts include:
 - the supplied `$25,560` board is scored exactly and appears in the quality seed portfolio;
 - the mixed rank/suit QA deal reaches at least `$25,140` from scratch;
 - the `$22,200` structural benchmark remains discoverable;
+- the same-deal `$20,550` screenshot floor constructs the known `$21,630`
+  straight-row leader during its first deep pass;
+- the recovered `$18,450` screenshot validates exactly and remains a protected
+  floor; an extended independent-seed benchmark for that deal reaches `$20,700`,
+  and improved Pro leaders are persisted as they stream instead of waiting for
+  the full pass to finish;
 - reference deals remain deterministic at their explicit attempt budgets;
 - continuation runs never move the displayed best backward;
 - an uploaded/saved incumbent is refined before broad Pro exploration and is the
   first protected trajectory;
+- first-pass incumbent look-ahead begins from the actual leader, while
+  continuation passes skip replaying that deterministic beam;
 - the mixed `$22,260` screenshot deal reaches the known `$24,450` leader through
   incumbent-aware multi-swap look-ahead;
 - the uploaded `$24,060` high-floor deal remains the leader while Pro retains strong

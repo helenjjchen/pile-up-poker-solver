@@ -10,7 +10,7 @@ import {
   createProHeuristicSession,
   finishProHeuristicSession,
   stepProHeuristicSession,
-} from "./proHeuristicSolver.js?v=pro-search-9";
+} from "./proHeuristicSolver.js?v=pro-search-10";
 import { compareProScores, scoreProPlacement } from "./proScoring.js";
 import {
   formatScoringWayCount,
@@ -22,7 +22,7 @@ import {
 import {
   proDisplayedScoreMismatch,
   recognizeProFantasylandScreenshot,
-} from "./screenshotRecognizer.js?v=screenshot-recognizer-32";
+} from "./screenshotRecognizer.js?v=screenshot-recognizer-34";
 import {
   attemptCardKey,
   reportNoEditReviewConfirmation,
@@ -1050,7 +1050,7 @@ function solveInWorker(cardIds, options, onProgress) {
 
     let worker;
     try {
-      worker = new Worker(new URL("./proHeuristicWorker.js?v=pro-solver-13", import.meta.url), {
+      worker = new Worker(new URL("./proHeuristicWorker.js?v=pro-solver-14", import.meta.url), {
         type: "module",
       });
     } catch {
@@ -1151,6 +1151,10 @@ async function optimize() {
         searchHistory?.solutions ?? [],
       );
       if (!latestResult.best) return;
+      // Persist streamed leaders immediately. A tab close, navigation, or iOS
+      // page eviction during a long Pro pass must not lose a score that was
+      // already shown to the player.
+      saveSolution(latestResult.best);
       const preservedIndex = latestResult.solutions.findIndex(
         (solution) => placementKey(solution) === activeKey,
       );

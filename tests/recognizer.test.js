@@ -4,7 +4,10 @@ import {
   __recognizerTestHooks,
   recognizedScoreMismatch,
 } from "../src/screenshotRecognizer.js";
-import { PRO_RANK_GLYPH_TEMPLATES } from "../src/proRankGlyphTemplates.js";
+import {
+  PRO_GRID_RANK_GLYPH_TEMPLATES,
+  PRO_RANK_GLYPH_TEMPLATES,
+} from "../src/proRankGlyphTemplates.js";
 
 const {
   assertProScreenshotDimensions,
@@ -25,6 +28,11 @@ assert.deepEqual(
   ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"],
 );
 assert.ok(Object.values(PRO_RANK_GLYPH_TEMPLATES).every((templates) => templates.length >= 1));
+assert.ok(
+  PRO_GRID_RANK_GLYPH_TEMPLATES["3"].length >
+    PRO_RANK_GLYPH_TEMPLATES["3"].length,
+  "verified upright 3 samples should not affect the tilted discard recognizer",
+);
 const proRects = proFallbackSlotRects(588, 1280);
 assert.equal(proRects.grid.length, 25);
 assert.equal(proRects.discard.length, 5);

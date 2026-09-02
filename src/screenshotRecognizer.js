@@ -1,5 +1,8 @@
 import { RANK_GLYPH_MASK_SIZE, RANK_GLYPH_TEMPLATES } from "./rankGlyphTemplates.js";
-import { PRO_RANK_GLYPH_TEMPLATES } from "./proRankGlyphTemplates.js";
+import {
+  PRO_GRID_RANK_GLYPH_TEMPLATES,
+  PRO_RANK_GLYPH_TEMPLATES,
+} from "./proRankGlyphTemplates.js";
 import { SCORE_GLYPH_MASK_SIZE, SCORE_GLYPH_TEMPLATES } from "./scoreGlyphTemplates.js";
 import { SUIT_GLYPH_MASK_SIZE, SUIT_GLYPH_TEMPLATES } from "./suitGlyphTemplates.js";
 import {
@@ -81,6 +84,7 @@ const MIN_SUIT_GLYPH_SCORE = 0.58;
 const MAX_DISPLAYED_SCORE_TOTAL = 40000;
 const MAX_PRO_DISPLAYED_SCORE_TOTAL = 40500;
 const MIN_PRO_SCREENSHOT_WIDTH = 500;
+const MIN_PRO_RANK_REVIEW_MARGIN = 0.01;
 const SCORE_CONTRAST_THRESHOLDS = [900, 2500, 6400, 10000, 14400];
 const SUITS = ["H", "S", "C", "D"];
 
@@ -466,14 +470,17 @@ function proDiscardRankPoints(imageData, rect, inkColor) {
   return normalizePoints(points.filter(([, y]) => y <= rankBandBottom));
 }
 
-function proRankCandidatesFromMasks(masks) {
+function proRankCandidatesFromMasks(
+  masks,
+  rankGlyphTemplates = PRO_RANK_GLYPH_TEMPLATES,
+) {
   const candidates = new Map();
   masks.forEach((rawMask) => {
     const mask = normalizedRankMask(
       removeArtifactComponents(rawMask ?? { points: [], width: 0, height: 0 }),
     );
     if (!mask) return;
-    Object.entries(PRO_RANK_GLYPH_TEMPLATES).forEach(([rank, templates]) => {
+    Object.entries(rankGlyphTemplates).forEach(([rank, templates]) => {
       const score = Math.max(...templates.map((template) => rankTemplateScore(mask, template)));
       const existing = candidates.get(rank);
       if (!existing || score > existing.confidence) {
@@ -496,7 +503,7 @@ function proTemplateRankCandidates(imageData, rect, zone, inkColor = null) {
   if (zone !== "discard") {
     return proRankCandidatesFromMasks([
       rankPoints(imageData, rect, GRID_RANK_CROPS[0]),
-    ]);
+    ], PRO_GRID_RANK_GLYPH_TEMPLATES);
   }
 
   const dynamicCandidates =
@@ -2541,9 +2548,12 @@ function classifyProScoreDigit(box) {
   const features = scoreDigitFeatures(box);
   const template = classifyScoreGlyph(box);
   const structural = classifyScoreDigit(features);
-  // The shared template corpus does not yet contain 3 or 6. Prefer the
-  // structural read for those two shapes instead of snapping them to 8.
-  if (structural === "3" || structural === "6") return structural;
+  // The shared template corpus does not yet contain 3 or 6. Keep the
+  // structural 6, and use a structural 3 when the template is missing or
+  // snaps it to 8. Preserve a positive 2 match such as the one in $20,550.
+  if (structural === "6") return structural;
+  if (structural === "3" && (!template || template === "8")) return structural;
+  if (structural === "3" && template === "2") return template;
   if (features.holes.length === 0 && structural) return structural;
   return template ?? structural;
 }
@@ -3029,7 +3039,8 @@ export function recognizeProFantasylandImageData(imageData) {
   const visualReviewFlags = allSlots.map(
     (slot, index) =>
       index !== jokerIndex &&
-      (slot.confidence < 0.6 || (slot.rankMargin ?? 0) < 0.02),
+      (slot.confidence < 0.6 ||
+        (slot.rankMargin ?? 0) < MIN_PRO_RANK_REVIEW_MARGIN),
   );
   const deckAdjustedFlags = allSlots.map(
     (slot, index) =>
@@ -3093,7 +3104,7 @@ export function recognizeProFantasylandImageData(imageData) {
   ) {
     warning = "Some Pro card reads needed deck validation. Review the highlighted slots.";
   } else if (unresolvedLowConfidence) {
-    warning = "I read all 30 Pro cards, but a few need review. Check the highlighted slots.";
+    warning = "Review the highlighted slots to check accuracy.";
   }
 
   return {
@@ -3220,7 +3231,7 @@ export function recognizeFantasylandImageData(imageData) {
   } else if (rawConflicts || deckAdjusted) {
     warning = "Some card reads needed deck validation. Review the highlighted slots.";
   } else if (unresolvedLowConfidence) {
-    warning = "I read all 20 cards, but a few need review. Check the highlighted slots.";
+    warning = "Review the highlighted slots to check accuracy.";
   }
 
   return {

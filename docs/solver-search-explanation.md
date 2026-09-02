@@ -475,15 +475,19 @@ Pro currently uses a best-found anytime search:
 
 1. Build deal-specific five-card metadata for strong rank, suit, straight,
    straight-flush, full-house, four-of-a-kind, discard, and corner-compatible
-   structures.
+   structures. Ordinary straight discards retain a bounded lane instead of
+   being crowded out by premium-hand combinations.
 2. Assemble complete starts from several independent structural families plus
-   mixed and unrestricted layouts.
+   mixed and unrestricted layouts. A bounded exact-cover pass can partition a
+   straight-heavy board into four runs plus a scoring fifth row, then arrange
+   those rows to maximize the intersecting columns.
 3. Keep the user layout, saved best, and earlier-run leaders as protected lower
    bounds.
 4. When a user layout or saved best exists, check every single-card swap from
    that leader before broad exploration. Repeat improving swaps until the
    leader reaches a one-swap local maximum.
-5. Run a bounded beam look-ahead from the strongest structural alternatives.
+5. Run a bounded beam look-ahead from the actual current leader, followed by
+   the strongest distinct structural alternatives.
    This preserves several promising intermediate boards across eight swap
    layers, so a higher placement can be reached even when its first few moves
    temporarily lower the score. The beam is score- and hand-potential driven,
@@ -506,7 +510,9 @@ Pro currently uses a best-found anytime search:
 
 The worker runs this search in short cooperative slices and streams a result only
 when it improves or enough time has passed for useful progress feedback. The UI
-can stop the worker early without losing the strongest placement already posted.
+persists every improved streamed leader immediately, so navigation, tab closure,
+or mobile page eviction cannot erase a score that was already shown. It can also
+stop the worker early without losing the strongest placement already posted.
 The screenshot remains pinned for comparison, while the other result pills show
 the strongest distinct alternatives actually found—even when some are below the
 uploaded score. Winner tracking stays separate from this archive: a runner-up
@@ -514,8 +520,8 @@ cannot displace the current best, and archive maintenance runs only at bounded
 trajectory/refinement checkpoints rather than on every visited placement.
 
 Repeat Optimize clicks pass earlier leaders back into the worker, skip the
-already-completed opening portfolio, perturb those leaders, and select a new
-deterministic continuation stream. The solver does not keep an unbounded set of
+already-completed opening portfolio and deterministic incumbent beam, perturb
+those leaders, and select a new deterministic continuation stream. The solver does not keep an unbounded set of
 every visited placement; that would consume more memory than it saves. Instead it
 avoids intentional replay through continuation seeds while retaining the best
 distinct states that matter.
@@ -525,6 +531,12 @@ The current regression portfolio is deliberately varied:
 - a `$25,560` suit/sequence-heavy board;
 - a mixed rank/suit deal that must reach at least `$25,140`;
 - a `$22,200` structural benchmark;
+- the repeated screenshot deal whose `$20,550` upload must construct the known
+  `$21,630` straight-row leader in the first deep pass;
+- the recovered `$18,450` screenshot remains a protected floor, while the same
+  deal's extended independent-seed benchmark reaches `$20,700` (the strongest
+  result after roughly 80 million sampled mutations, not a proof of the global
+  optimum);
 - the mixed screenshot board whose uploaded `$22,260` layout now has a
   first-pass regression target above `$22,980`;
 - two earlier reference boards;

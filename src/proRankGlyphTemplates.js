@@ -67,6 +67,17 @@ const ENCODED_PRO_RANK_GLYPHS = {
   ],
 };
 
+// Phone-share antialiasing can make narrow Pro grid digits nearly tie a
+// neighboring rank. These verified grid samples stay separate because the
+// tilted, overlapping discard cards use different masks.
+const ENCODED_PRO_GRID_ONLY_RANK_GLYPHS = {
+  "3": [
+    "Af+AAf+AD//8D//8P/P/P/P//wD//wD//wAf/wAfAAD/AAD/AA//AA//Af/8Af/8AH//AH//AAD/AAD/AAAfAAAf+AAf+AAf/wD//wD///D///D/P//8P//8Af/wAf/w",
+    "A//AA//AD//wD//wP//8P4H8P4H8PgB8PgB8AAB8AAB8AAB8AAf8AAfwAP/wAP/wAP/wAP/8AD/8AD/8AAB8AAB/AAB//gB//gAf/gB/PgB8P4H8P4H8P//8D//wD//w",
+    "A//wA//wP//8P//8P4H8P4H8/gH8/gH8PgH8PgH8AAH8AAH8A//8A//8A//wA//wAD/8AD/8AAH/AAH/AAH/AAH//gH//gH//gH//gH/P//8P//8D//wD//wA/8AA/8A",
+  ],
+};
+
 function decodeBase64(encoded) {
   if (typeof atob === "function") return atob(encoded);
   return Buffer.from(encoded, "base64").toString("binary");
@@ -85,5 +96,15 @@ export const PRO_RANK_GLYPH_TEMPLATES = Object.fromEntries(
   Object.entries(ENCODED_PRO_RANK_GLYPHS).map(([rank, encodedTemplates]) => [
     rank,
     encodedTemplates.map(decodeMask),
+  ]),
+);
+
+export const PRO_GRID_RANK_GLYPH_TEMPLATES = Object.fromEntries(
+  Object.entries(ENCODED_PRO_RANK_GLYPHS).map(([rank, encodedTemplates]) => [
+    rank,
+    [
+      ...encodedTemplates,
+      ...(ENCODED_PRO_GRID_ONLY_RANK_GLYPHS[rank] ?? []),
+    ].map(decodeMask),
   ]),
 );

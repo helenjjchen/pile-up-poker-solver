@@ -8,6 +8,10 @@ const html = readFileSync(`${root}/index.html`, "utf8");
 const proHtml = readFileSync(`${root}/pro.html`, "utf8");
 const app = readFileSync(`${root}/src/app.js`, "utf8");
 const proApp = readFileSync(`${root}/src/proApp.js`, "utf8");
+const screenshotRecognizer = readFileSync(
+  `${root}/src/screenshotRecognizer.js`,
+  "utf8",
+);
 const modeBoot = readFileSync(`${root}/src/modeBoot.js`, "utf8");
 const solutionPortfolio = readFileSync(
   `${root}/src/solutionPortfolio.js`,
@@ -96,9 +100,9 @@ const horizontalLabels = ruleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
 
 assert.match(html, /styles\.css\?v=design-system-61/);
-assert.match(html, /src\/modeBoot\.js\?v=mode-shell-16/);
-assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-54/);
-assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-23/);
+assert.match(html, /src\/modeBoot\.js\?v=mode-shell-17/);
+assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-55/);
+assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-24/);
 assert.match(
   modeBoot,
   /deepSearchOption\.value = isPro \? "45000" : "30000"/,
@@ -107,14 +111,29 @@ assert.match(
   modeBoot,
   /deepSearchOption\.textContent = isPro \? "Deep · 45s" : "Deep · 30s"/,
 );
-assert.match(app, /screenshotRecognizer\.js\?v=screenshot-recognizer-32/);
-assert.match(proApp, /screenshotRecognizer\.js\?v=screenshot-recognizer-32/);
+assert.match(app, /screenshotRecognizer\.js\?v=screenshot-recognizer-34/);
+assert.match(proApp, /screenshotRecognizer\.js\?v=screenshot-recognizer-34/);
+assert.doesNotMatch(screenshotRecognizer, /\bI read\b/);
+assert.match(
+  screenshotRecognizer,
+  /Review the highlighted slots to check accuracy\./,
+);
+assert.doesNotMatch(
+  [html, app, proApp, modeBoot, screenshotRecognizer].join("\n"),
+  /(?:^|[^A-Za-z])I(?:[^A-Za-z]|$)/,
+  "user-facing website source should not use a first-person voice",
+);
 assert.match(app, /recognizerFeedback\.js\?v=recognizer-feedback-1/);
 assert.match(proApp, /recognizerFeedback\.js\?v=recognizer-feedback-1/);
 assert.match(app, /solutionPortfolio\.js\?v=solution-portfolio-1/);
 assert.match(proApp, /solutionPortfolio\.js\?v=solution-portfolio-1/);
-assert.match(proApp, /proHeuristicSolver\.js\?v=pro-search-9/);
-assert.match(proApp, /proHeuristicWorker\.js\?v=pro-solver-13/);
+assert.match(proApp, /proHeuristicSolver\.js\?v=pro-search-10/);
+assert.match(proApp, /proHeuristicWorker\.js\?v=pro-solver-14/);
+assert.match(
+  proApp,
+  /const onProgress = \(progress\) => \{[\s\S]*?saveSolution\(latestResult\.best\);/,
+  "Pro should persist a streamed leader before the search finishes",
+);
 assert.match(app, /solutionProfiles\.js\?v=solution-profiles-2/);
 assert.match(proApp, /solutionProfiles\.js\?v=solution-profiles-2/);
 assert.match(

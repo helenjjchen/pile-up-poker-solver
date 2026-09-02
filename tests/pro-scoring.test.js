@@ -256,6 +256,159 @@ assert.ok(
   `Balanced Pro structural search regressed to ${structuralBenchmarkSeedTotal}`,
 );
 
+const repeatedUploadGrid = [
+  "4C", "AH", "3S", "2H", "5C",
+  "3H", "3D", "2S", "2D", "KS",
+  "7D", "6D", "JK", "8D", "5D",
+  "7S", "9C", "6S", "8S", "5H",
+  "7C", "9H", "5S", "8H", "6C",
+];
+const repeatedUploadDiscard = ["JC", "QH", "10H", "KD", "AC"];
+const repeatedUploadScore = scoreProPlacement(
+  repeatedUploadGrid,
+  repeatedUploadDiscard,
+);
+assert.equal(repeatedUploadScore.total, 20550);
+const repeatedUploadLeaderGrid = [
+  "2S", "2D", "KS", "3D", "3S",
+  "6D", "4C", "8H", "7D", "5D",
+  "2H", "AH", "JK", "3H", "5H",
+  "6C", "9C", "8D", "7C", "5C",
+  "6S", "9H", "8S", "7S", "5S",
+];
+const repeatedUploadLeaderScore = scoreProPlacement(
+  repeatedUploadLeaderGrid,
+  repeatedUploadDiscard,
+);
+assert.equal(repeatedUploadLeaderScore.total, 21630);
+const repeatedUploadDeal = [...repeatedUploadGrid, ...repeatedUploadDiscard];
+assert.deepEqual(
+  sortProCardIds(repeatedUploadDeal),
+  sortProCardIds([...repeatedUploadLeaderGrid, ...repeatedUploadDiscard]),
+);
+assert.ok(
+  __proHeuristicTestHooks
+    .strongDiscardCandidates(repeatedUploadDeal)
+    .some(
+      (discard) =>
+        sortProCardIds(discard).join("|") ===
+        sortProCardIds(repeatedUploadDiscard).join("|"),
+    ),
+  "ordinary straight discards should be represented in the structural portfolio",
+);
+const repeatedUploadSession = createProHeuristicSession(repeatedUploadDeal, {
+  timeLimitMs: 45000,
+  incumbent: {
+    grid: repeatedUploadGrid,
+    discard: repeatedUploadDiscard,
+    score: repeatedUploadScore,
+    source: "repeated screenshot floor",
+  },
+});
+assert.ok(
+  repeatedUploadSession.best.score.total >= repeatedUploadLeaderScore.total,
+  `straight-row structural search regressed to ${repeatedUploadSession.best.score.total}`,
+);
+const incumbentBeamSession = createProHeuristicSession(repeatedUploadDeal, {
+  timeLimitMs: 10000,
+  maxAnnealingAttempts: 100,
+  incumbent: {
+    grid: repeatedUploadGrid,
+    discard: repeatedUploadDiscard,
+    score: repeatedUploadScore,
+    source: "beam seed floor",
+  },
+});
+while (
+  incumbentBeamSession.phase === "refinement" &&
+  !incumbentBeamSession.done
+) {
+  stepProHeuristicSession(incumbentBeamSession, 5);
+}
+assert.equal(incumbentBeamSession.phase, "beam");
+assert.deepEqual(
+  incumbentBeamSession.beamSeeds[0],
+  [
+    ...incumbentBeamSession.best.grid,
+    ...incumbentBeamSession.best.discard,
+  ],
+  "incumbent look-ahead should begin from the actual leader",
+);
+const repeatedUploadContinuation = createProHeuristicSession(
+  repeatedUploadDeal,
+  {
+    timeLimitMs: 10000,
+    maxAnnealingAttempts: 100,
+    continuationIndex: 1,
+    incumbent: {
+      grid: repeatedUploadLeaderGrid,
+      discard: repeatedUploadDiscard,
+      score: repeatedUploadLeaderScore,
+      source: "continued screenshot leader",
+    },
+  },
+);
+assert.equal(
+  repeatedUploadContinuation.incumbentBeamPending,
+  false,
+  "continuation passes should explore fresh trajectories instead of replaying the deterministic beam",
+);
+
+const exitedHighScoreGrid = [
+  "6S", "2S", "3S", "4S", "JK",
+  "8C", "QC", "3C", "4C", "QH",
+  "8D", "JS", "7S", "9D", "10C",
+  "2H", "2D", "3D", "4H", "JH",
+  "8S", "6D", "7C", "5D", "9S",
+];
+const exitedHighScoreDiscard = ["KH", "KD", "AH", "AC", "AS"];
+const exitedHighScore = scoreProPlacement(
+  exitedHighScoreGrid,
+  exitedHighScoreDiscard,
+);
+assert.equal(exitedHighScore.total, 18450);
+assert.equal(exitedHighScore.handCount, 12);
+const exitedHighScoreSession = createProHeuristicSession(
+  [...exitedHighScoreGrid, ...exitedHighScoreDiscard],
+  {
+    timeLimitMs: 10000,
+    maxAnnealingAttempts: 100,
+    incumbent: {
+      grid: exitedHighScoreGrid,
+      discard: exitedHighScoreDiscard,
+      score: exitedHighScore,
+      source: "recovered screenshot leader",
+    },
+  },
+);
+assert.ok(
+  exitedHighScoreSession.best.score.total >= exitedHighScore.total,
+  "a recovered screenshot leader must remain the search floor",
+);
+
+const exitedHighScoreDeepGrid = [
+  "6D", "2S", "KH", "KD", "5D",
+  "8C", "2H", "AH", "AC", "AS",
+  "8S", "7S", "JK", "JS", "9S",
+  "6S", "2D", "QH", "QC", "3D",
+  "8D", "7C", "JH", "10C", "9D",
+];
+const exitedHighScoreDeepDiscard = ["4C", "3S", "4S", "3C", "4H"];
+const exitedHighScoreDeep = scoreProPlacement(
+  exitedHighScoreDeepGrid,
+  exitedHighScoreDeepDiscard,
+);
+assert.equal(exitedHighScoreDeep.total, 20700);
+assert.equal(exitedHighScoreDeep.handCount, 12);
+assert.deepEqual(
+  sortProCardIds([
+    ...exitedHighScoreDeepGrid,
+    ...exitedHighScoreDeepDiscard,
+  ]),
+  sortProCardIds([...exitedHighScoreGrid, ...exitedHighScoreDiscard]),
+  "the extended-search leader must use exactly the recovered screenshot deal",
+);
+
 const mixedScreenshotGrid = [
   "8C", "9D", "9S", "9H", "9C",
   "QD", "4D", "7S", "4H", "7H",

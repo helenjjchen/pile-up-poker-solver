@@ -87,6 +87,8 @@ Use these tokens before introducing a literal spacing value.
   the search controls.
 - Grid-attempt guidance uses the shared body size with `1.45` line height and concise wording. It may wrap naturally
   in the narrow picker column, but must keep readable space between the correction fields and actions.
+- User-facing guidance is professional, direct, and impersonal. Do not make the interface speak as “I.” A complete
+  recognition with unresolved confidence flags says “Review the highlighted slots to check accuracy.” in both modes.
 - Score summary cards use `12px` padding and `12px` gaps.
 - Diagnostics content and its nested status cards use `12px` padding and gaps.
 - Normal and Pro diagnostics use the same status-card structure and typography. Mode-specific search facts may
@@ -166,6 +168,8 @@ Use these tokens before introducing a literal spacing value.
 - Optimize is resumable for the current page session. Repeating it for the same deal keeps prior leaders, advances
   to a fresh deterministic search stream, and skips the structural opening portfolio already completed on the first
   pass. Changing modes or deals uses that deal's own history; a certified Normal optimum still loads immediately.
+- Pro persists each improved streamed leader to the deal's local saved record before the pass finishes. A score
+  already shown on screen must survive navigation, tab closure, or mobile page eviction.
 - Starting a continuation must not collapse the visible results back to the uploaded grid. The current board and
   prior result pills remain available while the next pass runs; live progress and the completed result merge newly
   found placements into that same portfolio. “Your grid” stays pinned for comparison but is never used to replace

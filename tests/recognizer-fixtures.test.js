@@ -145,6 +145,19 @@ const proFixtures = [
     ],
     discard: ["JK", "AS", "6D", "8D", "AD"],
   },
+  {
+    file: "pileup-pro-threes-20550.png",
+    total: 20550,
+    handCount: 12,
+    grid: [
+      "4C", "AH", "3S", "2H", "5C",
+      "3H", "3D", "2S", "2D", "KS",
+      "7D", "6D", "JK", "8D", "5D",
+      "7S", "9C", "6S", "8S", "5H",
+      "7C", "9H", "5S", "8H", "6C",
+    ],
+    discard: ["JC", "QH", "10H", "KD", "AC"],
+  },
 ];
 
 for (const fixture of proFixtures) {
@@ -171,7 +184,7 @@ for (const fixture of proFixtures) {
     assert.deepEqual(reviewedGrid, fixture.expectedReview.grid);
     assert.deepEqual(reviewedDiscard, fixture.expectedReview.discard);
     assert.equal(recognized.complete, false);
-    assert.match(recognized.warning, /few need review/);
+    assert.equal(recognized.warning, "Review the highlighted slots to check accuracy.");
   } else {
     assert.equal(recognized.complete, true, `${fixture.file}: recognition should be complete`);
     assert.equal(recognized.warning, "", `${fixture.file}: recognition should not need manual correction`);

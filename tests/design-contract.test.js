@@ -249,6 +249,8 @@ assert.match(designSystem, /dollar total is the primary/);
 assert.match(designSystem, /every[\s\S]*unused legal card for that slot would break/);
 assert.match(designSystem, /confirms without changing any imported card/);
 assert.match(designSystem, /Do not include the screenshot, filename, or card identities/);
+assert.match(designSystem, /Do not make the interface speak as “I.”/);
+assert.match(designSystem, /Review the highlighted slots to check accuracy/);
 assert.match(designSystem, /never disables Optimize for a complete, duplicate-free deal/);
 assert.match(
   designSystem,
@@ -257,6 +259,10 @@ assert.match(
 assert.match(
   designSystem,
   /Starting a continuation must not collapse the visible results back to the uploaded grid[\s\S]*prior result pills remain available/,
+);
+assert.match(
+  designSystem,
+  /Pro persists each improved streamed leader[\s\S]*survive navigation, tab closure, or mobile page eviction/,
 );
 assert.match(
   designSystem,

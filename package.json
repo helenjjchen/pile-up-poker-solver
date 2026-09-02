@@ -7,6 +7,6 @@
     "dev": "node server.mjs",
     "build:pages": "node tools/build-pages.mjs",
     "compile:exact": "clang++ -std=c++20 -O3 tools/exact_fantasyland_10.cpp -o tools/bin/exact_fantasyland_10",
-    "test": "node tests/scoring.test.js && node tests/pro-scoring.test.js && node tests/best-known-cache.test.js && node tests/recognizer.test.js && node tests/recognizer-feedback.test.js && node tests/recognizer-fixtures.test.js && node tests/recognizer-theme-invariance.test.js && node tests/solution-portfolio.test.js && node tests/design-contract.test.js && node tests/ui-contract.test.js && node tests/deployment-contract.test.js"
+    "test": "node tests/scoring.test.js && node tests/pro-scoring.test.js && node tests/best-known-cache.test.js && node tests/recognizer.test.js && node tests/recognizer-feedback.test.js && node tests/recognizer-fixtures.test.js && node tests/recognizer-same-deal-fixtures.test.js && node tests/recognizer-pro-high-score-fixture.test.js && node tests/recognizer-theme-invariance.test.js && node tests/solution-portfolio.test.js && node tests/design-contract.test.js && node tests/ui-contract.test.js && node tests/deployment-contract.test.js"
   }
 }

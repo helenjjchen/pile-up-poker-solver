@@ -286,39 +286,57 @@ function strongDiscardCandidates(cardIds) {
     }
   }
 
-  // Include available five-card straight flushes. These are uncommon, but a
-  // quality discard can be the difference between the 11- and 12-hand tiers.
-  for (const suit of PRO_SUITS) {
-    const byRankIndex = new Map(
-      naturalCards
-        .filter((cardId) => PRO_CARD_BY_ID[cardId].suit === suit)
-        .map((cardId) => [PRO_CARD_BY_ID[cardId].rankIndex, cardId]),
-    );
-    const windows = [
-      ...Array.from({ length: PRO_RANKS.length - 4 }, (_, start) =>
-        Array.from({ length: 5 }, (_unused, offset) => start + offset),
-      ),
-      [0, 1, 2, 3, PRO_RANKS.length - 1],
-    ];
-    for (const ranks of windows) {
-      const present = ranks.map((rank) => byRankIndex.get(rank)).filter(Boolean);
-      if (present.length === 5) add(present);
-      if (
-        present.length === 4 &&
-        cardIds.includes(JOKER_ID)
-      ) {
-        add([...present, JOKER_ID]);
-      }
-    }
-  }
+  // Ordinary straights also matter in discard. Reserve a bounded, diverse
+  // lane for them without allowing their many suit combinations to crowd out
+  // quads, full houses, and straight flushes.
+  straightHandCandidates(cardIds).forEach(({ cards }) => add(cards));
 
-  return [...candidates.values()]
-    .sort((a, b) => {
-      if (a.hand.base !== b.hand.base) return b.hand.base - a.hand.base;
-      const aKeepsJoker = Number(!a.discard.includes(JOKER_ID));
-      const bKeepsJoker = Number(!b.discard.includes(JOKER_ID));
-      return bKeepsJoker - aKeepsJoker;
+  const comparePremiumCandidates = (a, b) => {
+    if (a.hand.base !== b.hand.base) return b.hand.base - a.hand.base;
+    const aKeepsJoker = Number(!a.discard.includes(JOKER_ID));
+    const bKeepsJoker = Number(!b.discard.includes(JOKER_ID));
+    return bKeepsJoker - aKeepsJoker;
+  };
+  const premium = [...candidates.values()]
+    .filter((candidate) => candidate.hand.key !== "straight")
+    .sort(comparePremiumCandidates);
+  const ordinaryStraights = [...candidates.values()]
+    .filter((candidate) => candidate.hand.key === "straight")
+    .map((candidate) => {
+      const discarded = new Set(candidate.discard);
+      const boardCards = cardIds.filter((cardId) => !discarded.has(cardId));
+      const suitCounts = new Map();
+      for (const cardId of candidate.discard) {
+        const card = PRO_CARD_BY_ID[cardId];
+        if (!card || card.joker) continue;
+        suitCounts.set(card.suit, (suitCounts.get(card.suit) ?? 0) + 1);
+      }
+      return {
+        ...candidate,
+        crossStructureValue: boardCrossStructureValue(boardCards),
+        suitCoherence: Math.min(
+          5,
+          Math.max(0, ...suitCounts.values()) +
+            Number(candidate.discard.includes(JOKER_ID)),
+        ),
+      };
     })
+    .sort(
+      (a, b) =>
+        b.crossStructureValue - a.crossStructureValue ||
+        b.suitCoherence - a.suitCoherence ||
+        comparePremiumCandidates(a, b),
+    );
+  const straightReserve = Math.min(16, ordinaryStraights.length);
+  const selected = [
+    ...premium.slice(0, 96 - straightReserve),
+    ...ordinaryStraights.slice(0, straightReserve),
+  ];
+  for (const candidate of ordinaryStraights.slice(straightReserve)) {
+    if (selected.length >= 96) break;
+    selected.push(candidate);
+  }
+  return selected
     .slice(0, 96)
     .map((candidate) => candidate.discard);
 }
@@ -418,6 +436,83 @@ function combinations(items, count) {
   };
   visit(0, []);
   return results;
+}
+
+function straightHandCandidates(cardIds) {
+  const candidates = new Map();
+  const naturalCards = cardIds.filter((cardId) => cardId !== JOKER_ID);
+  const byRankIndex = new Map();
+  for (const cardId of naturalCards) {
+    const rankIndex = PRO_CARD_BY_ID[cardId].rankIndex;
+    if (!byRankIndex.has(rankIndex)) byRankIndex.set(rankIndex, []);
+    byRankIndex.get(rankIndex).push(cardId);
+  }
+  const windows = [
+    ...Array.from({ length: PRO_RANKS.length - 4 }, (_, start) =>
+      Array.from({ length: 5 }, (_unused, offset) => start + offset),
+    ),
+    [0, 1, 2, 3, PRO_RANKS.length - 1],
+  ];
+  const add = (cards) => {
+    if (cards.length !== 5 || new Set(cards).size !== 5) return;
+    const key = [...cards].sort().join("|");
+    if (candidates.has(key)) return;
+    const hand = scoreProHand(cards);
+    if (hand.key !== "straight" && hand.key !== "straight-flush") return;
+    const suitCounts = new Map();
+    for (const cardId of cards) {
+      const card = PRO_CARD_BY_ID[cardId];
+      if (!card || card.joker) continue;
+      suitCounts.set(card.suit, (suitCounts.get(card.suit) ?? 0) + 1);
+    }
+    candidates.set(key, {
+      cards: [...cards],
+      hand,
+      suitCoherence: Math.min(
+        5,
+        Math.max(0, ...suitCounts.values()) + Number(cards.includes(JOKER_ID)),
+      ),
+    });
+  };
+  const chooseRanks = (rankChoices, index, chosen, onComplete) => {
+    if (index >= rankChoices.length) {
+      onComplete(chosen);
+      return;
+    }
+    for (const cardId of rankChoices[index]) {
+      chooseRanks(rankChoices, index + 1, [...chosen, cardId], onComplete);
+    }
+  };
+
+  for (const window of windows) {
+    const choices = window.map((rankIndex) => byRankIndex.get(rankIndex) ?? []);
+    const missingIndexes = choices
+      .map((rankCards, index) => (rankCards.length === 0 ? index : -1))
+      .filter((index) => index >= 0);
+    if (missingIndexes.length === 0) {
+      chooseRanks(choices, 0, [], add);
+      if (cardIds.includes(JOKER_ID)) {
+        for (let replacement = 0; replacement < choices.length; replacement += 1) {
+          chooseRanks(
+            choices.filter((_rankCards, index) => index !== replacement),
+            0,
+            [],
+            (chosen) => add([...chosen, JOKER_ID]),
+          );
+        }
+      }
+      continue;
+    }
+    if (missingIndexes.length === 1 && cardIds.includes(JOKER_ID)) {
+      chooseRanks(
+        choices.filter((rankCards) => rankCards.length > 0),
+        0,
+        [],
+        (chosen) => add([...chosen, JOKER_ID]),
+      );
+    }
+  }
+  return [...candidates.values()];
 }
 
 function representativeQuadDiscards(discardCandidates) {
@@ -1320,6 +1415,152 @@ function qualityRowStructuredStates(cardIds, discardCandidates) {
   return refined;
 }
 
+function straightRowStructuredStates(
+  cardIds,
+  discardCandidates,
+  maxDetailedDiscards = 1,
+  arrangementBeamWidth = 480,
+) {
+  if (maxDetailedDiscards <= 0) return [];
+  const results = [];
+  const ordinaryStraightDiscards = discardCandidates
+    .filter((discard) => scoreProHand(discard).key === "straight")
+    .slice(0, maxDetailedDiscards);
+
+  for (const discard of ordinaryStraightDiscards) {
+    const discarded = new Set(discard);
+    const boardCards = sortProCardIds(
+      cardIds.filter((cardId) => !discarded.has(cardId)),
+    );
+    if (boardCards.length !== 25) continue;
+    const indexByCard = new Map(
+      boardCards.map((cardId, index) => [cardId, index]),
+    );
+    const fullMask = (1n << BigInt(boardCards.length)) - 1n;
+    const straightRows = straightHandCandidates(boardCards)
+      .map((candidate) => ({
+        ...candidate,
+        mask: candidate.cards.reduce(
+          (mask, cardId) =>
+            mask | (1n << BigInt(indexByCard.get(cardId))),
+          0n,
+        ),
+      }))
+      .sort(
+        (a, b) =>
+          b.hand.base - a.hand.base ||
+          b.suitCoherence - a.suitCoherence,
+      );
+    if (straightRows.length === 0) continue;
+    const rowsByCardIndex = Array.from(
+      { length: boardCards.length },
+      () => [],
+    );
+    for (const candidate of straightRows) {
+      for (let index = 0; index < boardCards.length; index += 1) {
+        if ((candidate.mask & (1n << BigInt(index))) !== 0n) {
+          rowsByCardIndex[index].push(candidate);
+        }
+      }
+    }
+
+    const leftoverCandidates = combinations(boardCards, 5)
+      .map((cards) => {
+        const hand = scoreProHand(cards);
+        if (hand.base < 60) return null;
+        const mask = cards.reduce(
+          (value, cardId) =>
+            value | (1n << BigInt(indexByCard.get(cardId))),
+          0n,
+        );
+        const leftoverSet = new Set(cards);
+        return {
+          cards,
+          hand,
+          mask,
+          crossStructureValue: boardCrossStructureValue(
+            boardCards.filter((cardId) => !leftoverSet.has(cardId)),
+          ),
+        };
+      })
+      .filter(Boolean)
+      .sort(
+        (a, b) =>
+          b.crossStructureValue - a.crossStructureValue ||
+          b.hand.base - a.hand.base,
+      )
+      .slice(0, 640);
+
+    const memberships = [];
+    for (const leftover of leftoverCandidates) {
+      const covers = [];
+      const visit = (remainingMask, rows) => {
+        if (covers.length >= 20_000) return;
+        if (rows.length === 4) {
+          if (remainingMask === 0n) {
+            covers.push({
+              rows,
+              rowBase:
+                leftover.hand.base +
+                rows.reduce((sum, row) => sum + row.hand.base, 0),
+              suitCoherence: rows.reduce(
+                (sum, row) => sum + row.suitCoherence,
+                0,
+              ),
+            });
+          }
+          return;
+        }
+        let anchorIndex = -1;
+        for (let index = 0; index < boardCards.length; index += 1) {
+          if ((remainingMask & (1n << BigInt(index))) !== 0n) {
+            anchorIndex = index;
+            break;
+          }
+        }
+        if (anchorIndex < 0) return;
+        for (const row of rowsByCardIndex[anchorIndex]) {
+          if ((row.mask & remainingMask) !== row.mask) continue;
+          visit(remainingMask ^ row.mask, [...rows, row]);
+        }
+      };
+      visit(fullMask ^ leftover.mask, []);
+      if (covers.length === 0) continue;
+      covers.sort(
+        (a, b) =>
+          b.rowBase - a.rowBase ||
+          b.suitCoherence - a.suitCoherence,
+      );
+      for (const cover of covers.slice(0, 3)) {
+        memberships.push({
+          ...cover,
+          crossStructureValue: leftover.crossStructureValue,
+          state: [
+            ...cover.rows.flatMap((row) => row.cards),
+            ...leftover.cards,
+            ...discard,
+          ],
+        });
+      }
+    }
+    memberships.sort(
+      (a, b) =>
+        b.rowBase - a.rowBase ||
+        b.suitCoherence - a.suitCoherence ||
+        b.crossStructureValue - a.crossStructureValue,
+    );
+    for (const membership of memberships.slice(0, 4)) {
+      const arranged = arrangeStructuredRows(
+        membership.state,
+        arrangementBeamWidth,
+      );
+      if (arranged) results.push(arranged);
+    }
+    if (results.length > 0) break;
+  }
+  return results;
+}
+
 function qualityColumnStructuredStates(
   cardIds,
   discardCandidates,
@@ -1800,6 +2041,12 @@ function initialStates(
     if (!discard) return;
     beamDiscardMap.set([...discard].sort().join("|"), discard);
   };
+  if (
+    incumbent?.discard?.length === 5 &&
+    scoreProHand(incumbent.discard).base > 0
+  ) {
+    addBeamDiscard(incumbent.discard);
+  }
   if (naturalQuadDiscards.length > 0) {
     representativeQuadDiscards(naturalQuadDiscards).forEach(addBeamDiscard);
   }
@@ -1808,6 +2055,10 @@ function initialStates(
       (discard) =>
         scoreProHand(discard).key === "straight-flush",
     )
+    .forEach(addBeamDiscard);
+  structuralDiscards
+    .filter((discard) => scoreProHand(discard).key === "straight")
+    .slice(0, 4)
     .forEach(addBeamDiscard);
   if (beamDiscardMap.size === 0) {
     structuralDiscards.slice(0, 12).forEach(addBeamDiscard);
@@ -1832,12 +2083,25 @@ function initialStates(
     searchBudgetMs >= 20_000 && !preservesSecondNaturalQuad
       ? qualityRowStructuredStates(cardIds, beamDiscards)
       : [];
+  const straightRowStarts =
+    searchBudgetMs >= 8_000
+      ? straightRowStructuredStates(
+          cardIds,
+          beamDiscards,
+          searchBudgetMs >= 20_000 ? 3 : 1,
+          searchBudgetMs >= 20_000 ? 480 : 160,
+        )
+      : [];
   const exhaustiveSuitStarts =
-    qualityRowStarts.length === 0 && searchBudgetMs < 20_000
+    qualityRowStarts.length === 0 &&
+    straightRowStarts.length === 0 &&
+    searchBudgetMs < 20_000
       ? exhaustiveSuitRowStates(cardIds, beamDiscards)
       : [];
   const qualityColumnStarts =
-    qualityRowStarts.length > 0 || exhaustiveSuitStarts.length > 0
+    qualityRowStarts.length > 0 ||
+    straightRowStarts.length > 0 ||
+    exhaustiveSuitStarts.length > 0
       ? []
       : qualityColumnStructuredStates(
           cardIds,
@@ -1904,6 +2168,7 @@ function initialStates(
     });
   starts.unshift(
     ...qualityRowStarts,
+    ...straightRowStarts,
     ...exhaustiveSuitStarts,
     ...qualityColumnStarts,
     ...strongestSuitStarts,
@@ -2483,13 +2748,16 @@ function startBeamSeed(session) {
 }
 
 function startIncumbentBeam(session) {
-  const leaderKey = session.best
-    ? [...session.best.grid, ...session.best.discard].join("|")
-    : "";
-  session.beamSeeds = session.starts
-    .filter((state) => state.join("|") !== leaderKey)
-    .slice(0, 3)
-    .map((state) => [...state]);
+  const leaderState = session.best
+    ? [...session.best.grid, ...session.best.discard]
+    : null;
+  const seedMap = new Map();
+  if (leaderState) seedMap.set(leaderState.join("|"), leaderState);
+  for (const state of session.starts) {
+    seedMap.set(state.join("|"), state);
+    if (seedMap.size >= 3) break;
+  }
+  session.beamSeeds = [...seedMap.values()].map((state) => [...state]);
   session.beamSeedIndex = 0;
   session.phase = "beam";
   startBeamSeed(session);
@@ -2760,9 +3028,16 @@ export function createProHeuristicSession(cardIds, options = {}) {
       best = normalized;
     }
   }
-  const strongestStart = starts[0]
-    ? stateToSolution(starts[0], "Pro structured seed")
-    : null;
+  // Protected uploaded/prior starts intentionally remain first in the restart
+  // order, but a stronger constructive start must still become the incumbent
+  // immediately. The portfolio is already bounded, so evaluating its leader
+  // here avoids making the search rediscover a seed it just constructed.
+  const strongestStart = starts.reduce((leader, state) => {
+    const solution = stateToSolution(state, "Pro structured seed");
+    return !leader || compareProScores(solution.score, leader.score) > 0
+      ? solution
+      : leader;
+  }, null);
   if (
     strongestStart &&
     (!best || compareProScores(strongestStart.score, best.score) > 0)
@@ -2814,7 +3089,7 @@ export function createProHeuristicSession(cardIds, options = {}) {
     maxRunnerUpSolutions,
     maxRefinementSeeds,
     phase: "annealing",
-    incumbentBeamPending: hasValidIncumbent,
+    incumbentBeamPending: hasValidIncumbent && continuationIndex === 0,
     beamSeeds: [],
     beamSeedIndex: 0,
     beamWidth: 96,
@@ -3037,6 +3312,8 @@ export const __proHeuristicTestHooks = {
   qualityRowStructuredStates,
   rankCoreColumnPartitions,
   representativeQuadDiscards,
+  straightHandCandidates,
+  straightRowStructuredStates,
   strongDiscardCandidates,
   suitStructuredStates,
   mutateTowardStraightFlush,
