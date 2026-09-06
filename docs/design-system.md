@@ -168,9 +168,12 @@ Use these tokens before introducing a literal spacing value.
 - Optimize is resumable for the current page session. Repeating it for the same deal keeps prior leaders, advances
   to a fresh deterministic search stream, and skips the structural opening portfolio already completed on the first
   pass. Changing modes or deals uses that deal's own history; a certified Normal optimum still loads immediately.
+- Before every pass, both modes choose the highest-scoring same-deal placement across the uploaded grid, saved best,
+  and current-session history. That exact layout—not only its score—becomes the first search lane, the status message
+  names its source accurately, and the visible board follows the strongest result while search is running.
 - Pro persists each improved streamed leader to the deal's local saved record before the pass finishes. A score
   already shown on screen must survive navigation, tab closure, or mobile page eviction.
-- Starting a continuation must not collapse the visible results back to the uploaded grid. The current board and
+- Starting a continuation must not collapse the visible results back to the uploaded grid. The strongest known board and
   prior result pills remain available while the next pass runs; live progress and the completed result merge newly
   found placements into that same portfolio. “Your grid” stays pinned for comparison but is never used to replace
   stronger same-deal results that were already found.

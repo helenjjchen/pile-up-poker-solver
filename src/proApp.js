@@ -1118,9 +1118,16 @@ async function optimize() {
     validation.valid && dealKey(validation.cards) === dealKey(dealCards)
       ? currentAttemptSolution()
       : null;
-  const incumbent = [saved, attempt, searchHistory?.best]
-    .filter(Boolean)
-    .sort((first, second) => compareProScores(second.score, first.score))[0] ?? null;
+  const incumbentEntry = [
+    { solution: searchHistory?.best, label: "best found" },
+    { solution: saved, label: "saved best" },
+    { solution: attempt, label: "grid attempt" },
+  ]
+    .filter((entry) => entry.solution?.score)
+    .sort((first, second) =>
+      compareProScores(second.solution.score, first.solution.score),
+    )[0] ?? null;
+  const incumbent = incumbentEntry?.solution ?? null;
 
   const generation = ++searchGeneration;
   recognitionRequestId += 1;
@@ -1128,21 +1135,26 @@ async function optimize() {
   let timerOutcome = "Done";
   let lastAnnouncedAt = 0;
   let lastAnnouncedTotal = -Infinity;
+  if (latestResult?.best && !latestResult.isAttemptView) {
+    activeSolutionIndex = 0;
+    renderResult({ skipAttemptSummary: true });
+  }
   renderSelectionState();
   clearButton.disabled = true;
   optimizeButton.disabled = false;
   optimizeButton.textContent = "Stop & keep best";
   statusLine.textContent =
     continuationIndex > 0
-      ? `Continuing Pro search pass ${continuationIndex + 1} from prior leaders with new trajectories.`
-      : "Searching Pro placements; the best board will update as it improves.";
+      ? `Continuing Pro search pass ${continuationIndex + 1} from ${incumbentEntry?.label ?? "prior leaders"}` +
+        `${incumbent ? ` ${money(incumbent.score.total)}` : ""} with new trajectories.`
+      : incumbent
+        ? `Searching Pro placements from ${incumbentEntry.label} ${money(incumbent.score.total)}; ` +
+          "the best board will update as it improves."
+        : "Searching Pro placements; the best board will update as it improves.";
   startTimer(budget);
   try {
     const onProgress = (progress) => {
       if (generation !== searchGeneration) return;
-      const activeKey = placementKey(
-        latestResult?.solutions?.[activeSolutionIndex] ?? latestResult?.best,
-      );
       latestResult = prepareSolverResult(
         progress,
         incumbent,
@@ -1155,10 +1167,9 @@ async function optimize() {
       // page eviction during a long Pro pass must not lose a score that was
       // already shown to the player.
       saveSolution(latestResult.best);
-      const preservedIndex = latestResult.solutions.findIndex(
-        (solution) => placementKey(solution) === activeKey,
-      );
-      activeSolutionIndex = preservedIndex >= 0 ? preservedIndex : 0;
+      // Progress always follows the strongest known placement. The uploaded
+      // grid remains pinned in the result pills for comparison.
+      activeSolutionIndex = 0;
       renderResult({ skipAttemptSummary: true });
       const now = performance.now();
       const bestTotal = latestResult.best.score.total;

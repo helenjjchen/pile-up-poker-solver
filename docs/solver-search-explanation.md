@@ -245,8 +245,9 @@ more branches.
 Search history is tracked separately for each exact deal during the current page
 session. A second click on Optimize does not replay the first pass:
 
-1. The strongest distinct layouts from prior passes become the new lower bound and
-   restart portfolio.
+1. The strongest uploaded, locally saved, or current-session layout becomes the
+   new lower bound and first restart lane. The status names that actual source;
+   it does not call a weaker upload the starting point merely because one exists.
 2. The expensive deterministic structural opening is skipped because it was already
    completed on pass one.
 3. A pass-specific deterministic seed selects fresh annealing trajectories.
@@ -254,11 +255,12 @@ session. A second click on Optimize does not replay the first pass:
 5. Normal's exact bucket search also resumes its saved bucket offsets, so proof work
    continues rather than restarting the current bucket from the beginning.
 
-The previous result portfolio also stays visible for the entire continuation. The
-uploaded board remains pinned as “Your grid,” but starting another pass does not
-replace stronger layouts already found with that upload. Normal merges its saved
-leaders into the completed heuristic result before exact proof begins; Pro merges
-them into every streamed progress update and the final worker result.
+The previous result portfolio also stays available for the entire continuation.
+The visible board follows the strongest known result, while the uploaded board
+remains pinned as “Your grid” for comparison. Normal supplies its locally saved
+layout to the heuristic even after a reload, then merges saved leaders into the
+completed result before exact proof begins. Pro merges them into every streamed
+progress update and the final worker result.
 
 A certified Normal deal is the one intentional exception to starting another
 search: the solver already has a proof that no stronger layout exists, so each
@@ -519,7 +521,8 @@ uploaded score. Winner tracking stays separate from this archive: a runner-up
 cannot displace the current best, and archive maintenance runs only at bounded
 trajectory/refinement checkpoints rather than on every visited placement.
 
-Repeat Optimize clicks pass earlier leaders back into the worker, skip the
+Repeat Optimize clicks pass the strongest earlier leader back into the worker,
+keep the visible board on the current best, skip the
 already-completed opening portfolio and deterministic incumbent beam, perturb
 those leaders, and select a new deterministic continuation stream. The solver does not keep an unbounded set of
 every visited placement; that would consume more memory than it saves. Instead it

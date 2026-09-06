@@ -607,9 +607,16 @@ export function solveFantasylandHeuristic(cardIds, options = {}) {
   );
   const expectedDealKey = stateDealKey(cardIds);
   const evaluator = createFastStateEvaluator(cardIds);
-  const initialStates = (options.initialPlacements ?? [])
-    .map((placement) => placementToState(placement, expectedDealKey))
-    .filter(Boolean);
+  const incumbentState = placementToState(
+    options.incumbentPlacement,
+    expectedDealKey,
+  );
+  const initialStates = [
+    incumbentState,
+    ...(options.initialPlacements ?? []).map((placement) =>
+      placementToState(placement, expectedDealKey),
+    ),
+  ].filter(Boolean);
   const candidates = allCombinations4(cardIds);
   const startBuildBudgetMs = fastMode ? Math.min(2500, Math.max(500, timeLimitMs * 0.18)) : timeLimitMs;
   const startDeadlineMs = Math.min(deadlineMs, startedAt + startBuildBudgetMs);
@@ -631,7 +638,7 @@ export function solveFantasylandHeuristic(cardIds, options = {}) {
               }
             : {},
         );
-  const starts = rankStartStates(
+  const rankedStarts = rankStartStates(
     [
       ...initialStates,
       ...structuredStarts,
@@ -641,6 +648,21 @@ export function solveFantasylandHeuristic(cardIds, options = {}) {
     ],
     evaluator,
   );
+  // The incumbent is the strongest known same-deal placement, so guarantee it
+  // the first continuation lane even when another seed has more scoring hands
+  // but a lower actual payout. Other starts remain available to diversify the
+  // portfolio.
+  const incumbentStateKey = incumbentState?.join("|") ?? null;
+  const incumbentStartIndex = incumbentStateKey
+    ? rankedStarts.findIndex((entry) => entry.state.join("|") === incumbentStateKey)
+    : -1;
+  const starts = incumbentStartIndex > 0
+    ? [
+        rankedStarts[incumbentStartIndex],
+        ...rankedStarts.slice(0, incumbentStartIndex),
+        ...rankedStarts.slice(incumbentStartIndex + 1),
+      ]
+    : rankedStarts;
   const solutions = new Map();
   let attempts = 0;
   const structuredPasses = options.structuredPasses ?? (fastMode ? 70 : 90);

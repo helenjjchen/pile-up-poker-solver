@@ -19,7 +19,7 @@ import {
   serializeBestKnownRecord,
 } from "./bestKnownCache.js?v=best-known-cache-1";
 import { solveFantasylandExactHighBuckets } from "./exactHighBucketSolver.js?v=solver-equivalence-3";
-import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-3";
+import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-4";
 import { uniqueSolutionsByPlacement } from "./layoutEquivalence.js?v=layout-equivalence-3";
 import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "./scoring.js";
 import {
@@ -1275,7 +1275,7 @@ function getHeuristicWorker() {
   if (heuristicWorker) return heuristicWorker;
 
   try {
-    heuristicWorker = new Worker(new URL("./heuristicSolverWorker.js?v=solver-fast-3", import.meta.url), { type: "module" });
+    heuristicWorker = new Worker(new URL("./heuristicSolverWorker.js?v=solver-fast-4", import.meta.url), { type: "module" });
   } catch {
     heuristicWorkerUnavailable = true;
     heuristicWorker = null;
@@ -2380,17 +2380,28 @@ async function optimize() {
   recognitionRequestId += 1;
   optimizerRunning = true;
   resetOptimizerTimer();
+  if (latestResult?.best && !latestResult.isAttemptView) {
+    activeSolutionIndex = 0;
+    renderResult();
+  }
   renderSelectionState();
   optimizeButton.disabled = true;
   optimizeButton.textContent = "Optimizing...";
   clearButton.disabled = true;
   const bestKnown = bestKnownForCurrentDeal();
+  const savedSolutions = bestKnown ? bestKnownSolutions(bestKnown) : [];
   const attemptSolution = currentAttemptSolution({ requireSelectedMatch: true });
-  const lowerBoundTotal = Math.max(
-    bestKnown?.score.total ?? 0,
-    attemptSolution?.score.total ?? 0,
-    searchHistory?.best?.score?.total ?? 0,
-  );
+  const incumbentEntry = [
+    { solution: searchHistory?.best, label: "best found" },
+    { solution: savedSolutions[0], label: "saved best" },
+    { solution: attemptSolution, label: "grid attempt" },
+  ]
+    .filter((entry) => entry.solution?.score)
+    .sort((first, second) =>
+      compareScores(second.solution.score, first.solution.score),
+    )[0] ?? null;
+  const incumbentSolution = incumbentEntry?.solution ?? null;
+  const lowerBoundTotal = incumbentSolution?.score.total ?? 0;
   const proof = exactProofForCurrentDeal();
   const hasCertifiedPlacement =
     bestKnown &&
@@ -2423,11 +2434,9 @@ async function optimize() {
 
   const timeBudget = Number(searchDepth.value);
   startOptimizerTimer(timeBudget, "Starting");
-  const lowerBoundLabel = attemptSolution
-    ? `grid attempt ${money(attemptSolution.score.total)}`
-    : bestKnown
-      ? `saved lower bound ${money(bestKnown.score.total)}`
-      : null;
+  const lowerBoundLabel = incumbentEntry
+    ? `${incumbentEntry.label} ${money(incumbentSolution.score.total)}`
+    : null;
   const continuationLabel =
     continuationIndex > 0
       ? `Continuing search pass ${continuationIndex + 1} with new trajectories`
@@ -2446,9 +2455,12 @@ async function optimize() {
       timeLimitMs: heuristicBudget,
       maxSolutions: 12,
       incumbentTotal: lowerBoundTotal,
+      incumbentPlacement: incumbentSolution,
       initialPlacements: [
-        ...(attemptSolution ? [attemptSolution] : []),
+        ...(incumbentSolution ? [incumbentSolution] : []),
         ...(searchHistory?.solutions ?? []),
+        ...savedSolutions,
+        ...(attemptSolution ? [attemptSolution] : []),
       ],
       continuationIndex,
       fastMode: true,

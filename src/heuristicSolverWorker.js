@@ -1,4 +1,4 @@
-import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-3";
+import { solveFantasylandHeuristic } from "./heuristicSolver.js?v=solver-fast-4";
 
 self.addEventListener("message", (event) => {
   const { id, type, payload } = event.data ?? {};

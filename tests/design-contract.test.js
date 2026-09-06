@@ -262,6 +262,10 @@ assert.match(
 );
 assert.match(
   designSystem,
+  /both modes choose the highest-scoring same-deal placement[\s\S]*exact layout—not only its score—becomes the first search lane[\s\S]*visible board follows the strongest result/,
+);
+assert.match(
+  designSystem,
   /Pro persists each improved streamed leader[\s\S]*survive navigation, tab closure, or mobile page eviction/,
 );
 assert.match(

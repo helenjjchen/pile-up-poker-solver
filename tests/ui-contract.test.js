@@ -8,6 +8,7 @@ const html = readFileSync(`${root}/index.html`, "utf8");
 const proHtml = readFileSync(`${root}/pro.html`, "utf8");
 const app = readFileSync(`${root}/src/app.js`, "utf8");
 const proApp = readFileSync(`${root}/src/proApp.js`, "utf8");
+const heuristicSolver = readFileSync(`${root}/src/heuristicSolver.js`, "utf8");
 const screenshotRecognizer = readFileSync(
   `${root}/src/screenshotRecognizer.js`,
   "utf8",
@@ -100,9 +101,9 @@ const horizontalLabels = ruleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
 
 assert.match(html, /styles\.css\?v=design-system-61/);
-assert.match(html, /src\/modeBoot\.js\?v=mode-shell-17/);
-assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-55/);
-assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-24/);
+assert.match(html, /src\/modeBoot\.js\?v=mode-shell-18/);
+assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-56/);
+assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-25/);
 assert.match(
   modeBoot,
   /deepSearchOption\.value = isPro \? "45000" : "30000"/,
@@ -348,14 +349,45 @@ for (const modeApp of [app, proApp]) {
     /continuationIndex/,
     "both modes should advance repeat searches onto a fresh deterministic stream",
   );
+  assert.match(
+    modeApp,
+    /if \(latestResult\?\.best && !latestResult\.isAttemptView\) \{\s*activeSolutionIndex = 0;\s*renderResult/,
+    "both modes should return the visible board to the current best when a new pass starts",
+  );
 }
 assert.match(app, /initialPlacements:\s*\[[\s\S]*?searchHistory\?\.solutions/);
+assert.match(
+  app,
+  /const incumbentEntry = \[[\s\S]*?searchHistory\?\.best[\s\S]*?savedSolutions\[0\][\s\S]*?attemptSolution/,
+  "Normal should choose its strongest prior, saved, or uploaded placement as the search incumbent",
+);
+assert.match(app, /incumbentPlacement:\s*incumbentSolution/);
+assert.match(
+  app,
+  /initialPlacements:\s*\[[\s\S]*?incumbentSolution[\s\S]*?searchHistory\?\.solutions[\s\S]*?savedSolutions[\s\S]*?attemptSolution/,
+  "Normal should pass saved layouts—not only their score—into continuation search",
+);
+assert.match(
+  heuristicSolver,
+  /options\.incumbentPlacement[\s\S]*?incumbentStartIndex[\s\S]*?rankedStarts\[incumbentStartIndex\]/,
+  "Normal should guarantee the strongest incumbent the first heuristic lane",
+);
 assert.match(
   app,
   /mergePriorSolutionsIntoResult\(\s*latestResult,\s*searchHistory\?\.solutions \?\? \[\],/,
   "Normal should merge prior-pass solutions back into every continuation result",
 );
 assert.match(proApp, /priorSolutions:\s*searchHistory\?\.solutions \?\? \[\]/);
+assert.match(
+  proApp,
+  /const incumbentEntry = \[[\s\S]*?searchHistory\?\.best[\s\S]*?saved[\s\S]*?attempt/,
+  "Pro should choose its strongest prior, saved, or uploaded placement as the search incumbent",
+);
+assert.match(
+  proApp,
+  /const onProgress = \(progress\) => \{[\s\S]*?activeSolutionIndex = 0;[\s\S]*?renderResult/,
+  "Pro progress should display its current best while retaining the uploaded comparison pill",
+);
 
 const normalOptimizeInputs = app.match(
   /async function optimizeCurrentInputs\(\) \{([\s\S]*?)\n\}/,
