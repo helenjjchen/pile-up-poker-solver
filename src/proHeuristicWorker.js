@@ -2,7 +2,7 @@ import {
   createProHeuristicSession,
   finishProHeuristicSession,
   stepProHeuristicSession,
-} from "./proHeuristicSolver.js?v=pro-search-11";
+} from "./proHeuristicSolver.js?v=pro-search-12";
 
 self.addEventListener("message", (event) => {
   const { id, cardIds, options } = event.data ?? {};

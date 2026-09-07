@@ -15,6 +15,7 @@ import {
   solutionOutcomeProfileKey,
   uniqueSolutionsByOutcomeProfile,
 } from "./solutionProfiles.js?v=solution-profiles-2";
+import { seededProBestKnownForDeal } from "./proBestKnown.js?v=pro-best-known-1";
 
 function mulberry32(seed) {
   return function random() {
@@ -2252,8 +2253,10 @@ function initialStates(
   {
     continuation = false,
     priorSolutions = [],
+    resumeFromKnownLeader = false,
   } = {},
 ) {
+  const lightweightResume = continuation || resumeFromKnownLeader;
   const sorted = sortProCardIds(cardIds);
   const reversed = [...sorted].reverse();
   const suitSorted = [...cardIds].sort((a, b) => {
@@ -2274,7 +2277,7 @@ function initialStates(
     snake[row * 5 + (row % 2 ? 4 - column : column)] = cardId;
   });
 
-  const starts = continuation
+  const starts = lightweightResume
     ? []
     : [sorted, reversed, suitSorted, [...suitSorted].reverse(), snake];
 
@@ -2308,17 +2311,37 @@ function initialStates(
   // Contiguous rank- and suit-ordered discard windows cheaply seed coherent
   // five-card rows and columns. They include natural quads/full houses and
   // straight-flush runs without enumerating all C(30, 5) possible hands.
-  if (!continuation) {
+  if (!lightweightResume) {
     addWindowStarts(sorted);
     addWindowStarts(suitSorted);
   }
-  const useStructuralPortfolio = !continuation && searchBudgetMs >= 1000;
+  const useStructuralPortfolio = !lightweightResume && searchBudgetMs >= 1000;
   const structuralDiscards = useStructuralPortfolio
     ? strongDiscardCandidates(cardIds)
     : [];
-  const suitStarts = useStructuralPortfolio
-    ? suitStructuredStates(cardIds, random, structuralDiscards)
-    : [];
+  const incumbentState = [
+    ...(incumbent?.grid ?? []),
+    ...(incumbent?.discard ?? []),
+  ];
+  const matchingIncumbentScore =
+    incumbentState.length === 30 &&
+    new Set(incumbentState).size === 30 &&
+    sortProCardIds(incumbentState).join("|") === sorted.join("|")
+      ? scoreProPlacement(
+          incumbentState.slice(0, 25),
+          incumbentState.slice(25),
+        )
+      : null;
+  // Deep suit-row arrangement and the rank-core quality-column lane are the
+  // largest Pro startup costs. A valid 12-hand incumbent already supplies the
+  // complete scoring structure those constructors are meant to discover, so
+  // prioritize its refinement and bounded multi-swap look-ahead instead.
+  const prioritizeCompleteIncumbent =
+    matchingIncumbentScore?.handCount === 12;
+  const suitStarts =
+    useStructuralPortfolio && !prioritizeCompleteIncumbent
+      ? suitStructuredStates(cardIds, random, structuralDiscards)
+      : [];
   const naturalQuadDiscards = structuralDiscards.filter(
     (discard) =>
       !discard.includes(JOKER_ID) &&
@@ -2353,7 +2376,7 @@ function initialStates(
   }
   const beamDiscards = [...beamDiscardMap.values()];
   const tripleAxisStarts =
-    searchBudgetMs >= 20_000
+    useStructuralPortfolio && searchBudgetMs >= 20_000
       ? tripleAxisStraightFlushStates(cardIds)
       : [];
   const preservesSecondNaturalQuad = beamDiscards.some((discard) => {
@@ -2372,11 +2395,13 @@ function initialStates(
     return [...remainingRankCounts.values()].some((count) => count === 4);
   });
   const qualityRowStarts =
-    searchBudgetMs >= 20_000 && !preservesSecondNaturalQuad
+    useStructuralPortfolio &&
+    searchBudgetMs >= 20_000 &&
+    !preservesSecondNaturalQuad
       ? qualityRowStructuredStates(cardIds, beamDiscards)
       : [];
   const straightRowStarts =
-    searchBudgetMs >= 8_000
+    useStructuralPortfolio && searchBudgetMs >= 8_000
       ? straightRowStructuredStates(
           cardIds,
           beamDiscards,
@@ -2385,12 +2410,15 @@ function initialStates(
         )
       : [];
   const exhaustiveSuitStarts =
+    useStructuralPortfolio &&
     qualityRowStarts.length === 0 &&
     straightRowStarts.length === 0 &&
     searchBudgetMs < 20_000
       ? exhaustiveSuitRowStates(cardIds, beamDiscards)
       : [];
   const qualityColumnStarts =
+    !useStructuralPortfolio ||
+    prioritizeCompleteIncumbent ||
     qualityRowStarts.length > 0 ||
     straightRowStarts.length > 0 ||
     exhaustiveSuitStarts.length > 0
@@ -2416,20 +2444,22 @@ function initialStates(
     }
     suitStartsByDiscard.get(discardKey).push(entry);
   }
-  const exploredSuitStarts = [...suitStartsByDiscard.values()]
-    .map((entries) =>
-      entries.sort((a, b) => {
-        if (a.fitness !== b.fitness) return b.fitness - a.fitness;
-        return compareProScores(b.score, a.score);
-      })[0],
-    )
-    .filter(Boolean)
-    .sort((a, b) => {
-      if (a.fitness !== b.fitness) return b.fitness - a.fitness;
-      return compareProScores(b.score, a.score);
-    })
-    .slice(0, 12)
-    .map((entry) => exploreSuitStructure(entry.state, random, 320));
+  const exploredSuitStarts = prioritizeCompleteIncumbent
+    ? []
+    : [...suitStartsByDiscard.values()]
+        .map((entries) =>
+          entries.sort((a, b) => {
+            if (a.fitness !== b.fitness) return b.fitness - a.fitness;
+            return compareProScores(b.score, a.score);
+          })[0],
+        )
+        .filter(Boolean)
+        .sort((a, b) => {
+          if (a.fitness !== b.fitness) return b.fitness - a.fitness;
+          return compareProScores(b.score, a.score);
+        })
+        .slice(0, 12)
+        .map((entry) => exploreSuitStructure(entry.state, random, 320));
   const strongestSuitStarts = exploredSuitStarts
     .map((state) => {
       const solution = stateToSolution(state, "Pro suit-row seed");
@@ -2478,7 +2508,7 @@ function initialStates(
         sortProCardIds(state).join("|") === sorted.join("|"),
     );
   starts.unshift(...priorStates);
-  if (continuation) {
+  if (lightweightResume) {
     // Repeat runs reuse the strongest layouts but spend their opening budget on
     // fresh perturbations instead of replaying the deterministic structure
     // portfolio from the first pass.
@@ -2499,13 +2529,13 @@ function initialStates(
       }
     }
   }
-  const randomStartCount = continuation ? 72 : 36;
+  const randomStartCount = lightweightResume ? 72 : 36;
   for (let index = 0; index < randomStartCount; index += 1) {
     starts.push(shuffle(cardIds, random));
   }
 
   const jokerIndex = cardIds.indexOf(JOKER_ID);
-  if (!continuation && jokerIndex !== -1) {
+  if (!lightweightResume && jokerIndex !== -1) {
     const centered = [...sorted];
     const currentCenter = centered.indexOf(JOKER_ID);
     [centered[12], centered[currentCenter]] = [centered[currentCenter], centered[12]];
@@ -2930,8 +2960,9 @@ function startRestart(session) {
   archiveCurrentTrajectory(session);
   const revisitLeader =
     session.best &&
-    session.restartCount > 0 &&
-    session.restartCount % session.leaderRestartInterval === 0;
+    ((session.preferLeaderOnFirstRestart && session.restartCount === 0) ||
+      (session.restartCount > 0 &&
+        session.restartCount % session.leaderRestartInterval === 0));
   const structuredSeed = session.starts[session.startIndex];
   const seed = revisitLeader
     ? perturbLeader(session.best, session.random)
@@ -3255,6 +3286,25 @@ export function createProHeuristicSession(cardIds, options = {}) {
     Number(options.continuationIndex) > 0
       ? Math.floor(Number(options.continuationIndex))
       : 0;
+  const requestedDealKey = sortProCardIds(cardIds).join("|");
+  const requestedIncumbentState = [
+    ...(options.incumbent?.grid ?? []),
+    ...(options.incumbent?.discard ?? []),
+  ];
+  const canResumeFromKnownLeader =
+    Boolean(options.resumeFromKnownLeader) &&
+    requestedIncumbentState.length === 30 &&
+    new Set(requestedIncumbentState).size === 30 &&
+    sortProCardIds(requestedIncumbentState).join("|") === requestedDealKey;
+  const seededKnownLeader = seededProBestKnownForDeal(cardIds);
+  const seededKnownState = [
+    ...(seededKnownLeader?.grid ?? []),
+    ...(seededKnownLeader?.discard ?? []),
+  ];
+  const hasSeededKnownLeader =
+    seededKnownState.length === 30 &&
+    new Set(seededKnownState).size === 30 &&
+    sortProCardIds(seededKnownState).join("|") === requestedDealKey;
   const startedAt = performance.now();
   const requestedSeed = Number(options.seed ?? hashCards(cardIds)) >>> 0;
   const baseSeed =
@@ -3268,13 +3318,14 @@ export function createProHeuristicSession(cardIds, options = {}) {
     {
       continuation: continuationIndex > 0,
       priorSolutions: options.priorSolutions,
+      resumeFromKnownLeader:
+        canResumeFromKnownLeader || hasSeededKnownLeader,
     },
   );
   const bestSolutions = new Map();
   let best = null;
   let hasValidIncumbent = false;
   const incumbent = options.incumbent;
-  const requestedDealKey = sortProCardIds(cardIds).join("|");
   const requestedMaxSolutions = Number(options.maxSolutions ?? 8);
   const maxSolutions =
     Number.isFinite(requestedMaxSolutions) && requestedMaxSolutions > 0
@@ -3302,6 +3353,16 @@ export function createProHeuristicSession(cardIds, options = {}) {
       score: scoreProPlacement(incumbent.grid, incumbent.discard),
     };
     bestSolutions.set(placementKey(best), best);
+  }
+  if (hasSeededKnownLeader) {
+    const seeded = stateToSolution(
+      seededKnownState,
+      seededKnownLeader.source ?? "Repo best known",
+    );
+    bestSolutions.set(placementKey(seeded), seeded);
+    if (!best || compareProScores(seeded.score, best.score) > 0) {
+      best = seeded;
+    }
   }
   for (const priorSolution of options.priorSolutions ?? []) {
     const state = [
@@ -3342,6 +3403,9 @@ export function createProHeuristicSession(cardIds, options = {}) {
   const session = {
     cardIds: [...cardIds],
     continuationIndex,
+    resumeFromKnownLeader:
+      canResumeFromKnownLeader || hasSeededKnownLeader,
+    hasSeededKnownLeader,
     timeLimitMs,
     startedAt,
     deadline: startedAt + timeLimitMs,
@@ -3362,6 +3426,7 @@ export function createProHeuristicSession(cardIds, options = {}) {
     startIndex: 0,
     restartCount: 0,
     leaderRestartCount: 0,
+    preferLeaderOnFirstRestart: hasSeededKnownLeader,
     leaderRestartInterval:
       maxAnnealingAttempts !== null && maxAnnealingAttempts <= 60_000
         ? Number.POSITIVE_INFINITY
@@ -3382,11 +3447,14 @@ export function createProHeuristicSession(cardIds, options = {}) {
     maxRunnerUpSolutions,
     maxRefinementSeeds,
     phase: "annealing",
-    incumbentBeamPending: hasValidIncumbent && continuationIndex === 0,
+    incumbentBeamPending:
+      hasValidIncumbent &&
+      continuationIndex === 0 &&
+      !canResumeFromKnownLeader,
     beamSeeds: [],
     beamSeedIndex: 0,
-    beamWidth: 96,
-    beamMaxDepth: 8,
+    beamWidth: hasSeededKnownLeader ? 24 : 96,
+    beamMaxDepth: hasSeededKnownLeader ? 2 : 8,
     beamDepth: 0,
     beam: [],
     beamNext: [],
@@ -3464,7 +3532,10 @@ export function stepProHeuristicSession(session, sliceMs = 16) {
         session.random,
         null,
         0,
-        { continuation: session.continuationIndex > 0 },
+        {
+          continuation: session.continuationIndex > 0,
+          resumeFromKnownLeader: session.resumeFromKnownLeader,
+        },
       );
       if (session.hasValidIncumbent && session.best) {
         session.starts.unshift(perturbLeader(session.best, session.random));

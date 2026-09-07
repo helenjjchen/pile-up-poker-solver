@@ -2902,6 +2902,80 @@ function proScoreMatchesExpected(score, expected) {
   return !proDisplayedScoreMismatch(score, expected);
 }
 
+function resolveProDiscardQuadFromScore(
+  allSlots,
+  jokerIndex,
+  displayedScore,
+) {
+  if (
+    !Number.isFinite(displayedScore?.total) ||
+    !Number.isFinite(displayedScore?.handCount)
+  ) {
+    return false;
+  }
+  const cards = allSlots.map((slot) => slot.cardId);
+  if (
+    cards.some((cardId) => !cardId) ||
+    new Set(cards).size !== cards.length
+  ) {
+    return false;
+  }
+  const currentScore = scoreProPlacement(
+    cards.slice(0, 25),
+    cards.slice(25, 30),
+  );
+  if (displayedScoreConfirmsPlacement(currentScore, displayedScore)) {
+    return false;
+  }
+  const discardSlots = allSlots.slice(25, 30);
+  const rankCounts = new Map();
+  discardSlots.forEach((slot) => {
+    if (!slot.rank || slot.rank === "JOKER") return;
+    rankCounts.set(slot.rank, (rankCounts.get(slot.rank) ?? 0) + 1);
+  });
+  const repeatedRanks = [...rankCounts.entries()]
+    .filter(([_rank, count]) => count === 3)
+    .map(([rank]) => rank);
+  const corrections = [];
+
+  for (const rank of repeatedRanks) {
+    discardSlots.forEach((slot, discardIndex) => {
+      if (slot.rank === rank) return;
+      for (const alternative of slot.alternatives ?? []) {
+        if (
+          alternative.rank !== rank ||
+          alternative.confidence < 0.7 ||
+          slot.confidence - alternative.confidence > 0.1
+        ) {
+          continue;
+        }
+        const index = 25 + discardIndex;
+        if (index === jokerIndex) continue;
+        if (
+          cards.some(
+            (cardId, cardIndex) =>
+              cardIndex !== index && cardId === alternative.cardId,
+          )
+        ) {
+          continue;
+        }
+        const candidateCards = [...cards];
+        candidateCards[index] = alternative.cardId;
+        const score = scoreProPlacement(
+          candidateCards.slice(0, 25),
+          candidateCards.slice(25, 30),
+        );
+        if (displayedScoreConfirmsPlacement(score, displayedScore)) {
+          corrections.push({ slot, alternative });
+        }
+      }
+    });
+  }
+  if (corrections.length !== 1) return false;
+  applyCandidate(corrections[0].slot, corrections[0].alternative);
+  return true;
+}
+
 function flagProScoreMismatchSlots(
   allSlots,
   reviewFlags,
@@ -3014,6 +3088,11 @@ export function recognizeProFantasylandImageData(imageData) {
     suitConfidence: 1,
     alternatives: [],
   };
+  resolveProDiscardQuadFromScore(
+    allSlots,
+    jokerIndex,
+    displayedScore,
+  );
 
   const cards = allSlots.map((slot) => slot.cardId);
   const recognizedCards = cards.filter(Boolean);

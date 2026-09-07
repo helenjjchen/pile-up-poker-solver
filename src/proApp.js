@@ -10,7 +10,7 @@ import {
   createProHeuristicSession,
   finishProHeuristicSession,
   stepProHeuristicSession,
-} from "./proHeuristicSolver.js?v=pro-search-11";
+} from "./proHeuristicSolver.js?v=pro-search-12";
 import { compareProScores, scoreProPlacement } from "./proScoring.js";
 import {
   formatScoringWayCount,
@@ -22,7 +22,7 @@ import {
 import {
   proDisplayedScoreMismatch,
   recognizeProFantasylandScreenshot,
-} from "./screenshotRecognizer.js?v=screenshot-recognizer-34";
+} from "./screenshotRecognizer.js?v=screenshot-recognizer-35";
 import {
   attemptCardKey,
   reportNoEditReviewConfirmation,
@@ -31,6 +31,7 @@ import {
   pinnedSolutionPortfolio,
   solutionPlacementKey,
 } from "./solutionPortfolio.js?v=solution-portfolio-1";
+import { seededProBestKnownForDeal } from "./proBestKnown.js?v=pro-best-known-1";
 
 const DEAL_SIZE = 30;
 const GRID_SIZE = 25;
@@ -227,10 +228,17 @@ function savedRecords() {
   }
 }
 
-function savedForCurrentDeal() {
+function bestKnownForCurrentDeal() {
   if (selected.size !== DEAL_SIZE) return null;
   const cards = selectedCards();
-  return normalizeProSolution(savedRecords()[dealKey(cards)], cards);
+  const local = normalizeProSolution(savedRecords()[dealKey(cards)], cards);
+  const seeded = normalizeProSolution(
+    seededProBestKnownForDeal(cards),
+    cards,
+  );
+  if (!local) return seeded;
+  if (!seeded) return local;
+  return compareProScores(local.score, seeded.score) >= 0 ? local : seeded;
 }
 
 function saveSolution(solution) {
@@ -557,16 +565,35 @@ async function handleAttemptScreenshotChange() {
       ),
     );
     if (validation.valid && !mismatch) {
-      const solution = currentAttemptSolution();
-      latestResult = {
-        best: solution,
-        solutions: [solution],
-        elapsedMs: 0,
-        attempts: 0,
-        isAttemptView: true,
-      };
+      const attempt = currentAttemptSolution();
+      const bestKnown = bestKnownForCurrentDeal();
+      const showBestKnown =
+        bestKnown &&
+        compareProScores(bestKnown.score, attempt.score) >= 0;
+      if (showBestKnown) {
+        latestResult = prepareSolverResult(
+          { best: bestKnown, solutions: [bestKnown], elapsedMs: 0, attempts: 0 },
+          bestKnown,
+          validation.cards,
+          attempt,
+        );
+        latestResult.isSavedView = true;
+        saveSolution(bestKnown);
+      } else {
+        latestResult = {
+          best: attempt,
+          solutions: [attempt],
+          elapsedMs: 0,
+          attempts: 0,
+          isAttemptView: true,
+        };
+      }
       renderResult();
-      statusLine.textContent = `Loaded Pro grid attempt: ${money(validation.score.total)}.`;
+      statusLine.textContent = showBestKnown
+        ? bestKnown.score.total > validation.score.total
+          ? `Loaded Pro grid attempt: ${money(validation.score.total)}. Best known for these cards: ${money(bestKnown.score.total)}.`
+          : `Loaded Pro grid attempt: ${money(validation.score.total)}. The best-known layout is ready.`
+        : `Loaded Pro grid attempt: ${money(validation.score.total)}.`;
     }
 
     if (recognized.warning && !recognized.scoreMismatch) {
@@ -676,7 +703,7 @@ function renderSelectionState() {
   const canUseManual = selected.size === DEAL_SIZE;
   const reviewCount = canUseAttempt ? attemptReviewCount() : 0;
   const optimizingAttempt = canUseAttempt;
-  const saved = canUseManual ? savedForCurrentDeal() : null;
+  const saved = canUseManual ? bestKnownForCurrentDeal() : null;
   if (!latestResult && saved) {
     latestResult = {
       best: saved,
@@ -1050,7 +1077,7 @@ function solveInWorker(cardIds, options, onProgress) {
 
     let worker;
     try {
-      worker = new Worker(new URL("./proHeuristicWorker.js?v=pro-solver-14", import.meta.url), {
+      worker = new Worker(new URL("./proHeuristicWorker.js?v=pro-solver-15", import.meta.url), {
         type: "module",
       });
     } catch {
@@ -1113,7 +1140,7 @@ async function optimize() {
   const currentDealKey = dealKey(dealCards);
   const searchHistory = searchHistoryByDeal.get(currentDealKey);
   const continuationIndex = searchHistory?.passes ?? 0;
-  const saved = savedForCurrentDeal();
+  const saved = bestKnownForCurrentDeal();
   const attempt =
     validation.valid && dealKey(validation.cards) === dealKey(dealCards)
       ? currentAttemptSolution()
@@ -1128,6 +1155,8 @@ async function optimize() {
       compareProScores(second.solution.score, first.solution.score),
     )[0] ?? null;
   const incumbent = incumbentEntry?.solution ?? null;
+  const resumeFromKnownLeader =
+    Boolean(incumbent) && incumbentEntry?.label !== "grid attempt";
 
   const generation = ++searchGeneration;
   recognitionRequestId += 1;
@@ -1135,7 +1164,18 @@ async function optimize() {
   let timerOutcome = "Done";
   let lastAnnouncedAt = 0;
   let lastAnnouncedTotal = -Infinity;
-  if (latestResult?.best && !latestResult.isAttemptView) {
+  if (resumeFromKnownLeader) {
+    latestResult = prepareSolverResult(
+      { best: incumbent, solutions: [incumbent], elapsedMs: 0, attempts: 0 },
+      incumbent,
+      dealCards,
+      attempt,
+      searchHistory?.solutions ?? [],
+    );
+    latestResult.isSavedView = incumbentEntry.label === "saved best";
+    activeSolutionIndex = 0;
+    renderResult({ skipAttemptSummary: true });
+  } else if (latestResult?.best && !latestResult.isAttemptView) {
     activeSolutionIndex = 0;
     renderResult({ skipAttemptSummary: true });
   }
@@ -1192,6 +1232,7 @@ async function optimize() {
         incumbent,
         priorSolutions: searchHistory?.solutions ?? [],
         continuationIndex,
+        resumeFromKnownLeader,
       },
       onProgress,
     );

@@ -158,6 +158,32 @@ const proFixtures = [
     ],
     discard: ["JC", "QH", "10H", "KD", "AC"],
   },
+  {
+    file: "pileup-pro-shared-corner-9460.png",
+    total: 9460,
+    handCount: 9,
+    grid: [
+      "8C", "5S", "6H", "4C", "7C",
+      "7H", "2C", "5D", "4H", "9S",
+      "3C", "2H", "JC", "4S", "9H",
+      "3D", "2D", "JD", "4D", "9D",
+      "JK", "QC", "JS", "10S", "9C",
+    ],
+    discard: ["KH", "KC", "AH", "AC", "AD"],
+  },
+  {
+    file: "pileup-pro-shared-corner-24030.png",
+    total: 24030,
+    handCount: 12,
+    grid: [
+      "AC", "2C", "4C", "3C", "JK",
+      "7H", "6H", "4H", "8C", "5S",
+      "AH", "10S", "QC", "JS", "KH",
+      "AD", "2D", "4D", "3D", "5D",
+      "JC", "2H", "4S", "JD", "KC",
+    ],
+    discard: ["7C", "9H", "9S", "9D", "9C"],
+  },
 ];
 
 for (const fixture of proFixtures) {

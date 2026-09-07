@@ -25,7 +25,7 @@ import { compareScores, scorePlacement, theoreticalMaxTotalForHandCount } from "
 import {
   recognizeFantasylandScreenshot,
   recognizedScoreMismatch,
-} from "./screenshotRecognizer.js?v=screenshot-recognizer-34";
+} from "./screenshotRecognizer.js?v=screenshot-recognizer-35";
 import {
   attemptCardKey,
   reportNoEditReviewConfirmation,

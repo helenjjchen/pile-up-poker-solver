@@ -47,6 +47,6 @@ deepSearchOption.textContent = isPro ? "Deep · 45s" : "Deep · 30s";
 
 await import(
   isPro
-    ? "./proApp.js?v=pro-solver-26"
-    : "./app.js?v=solver-cache-56"
+    ? "./proApp.js?v=pro-solver-27"
+    : "./app.js?v=solver-cache-57"
 );
