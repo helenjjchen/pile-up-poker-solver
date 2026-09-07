@@ -241,6 +241,24 @@ const FIVE_CARD_PERMUTATIONS = (() => {
   return permutations;
 })();
 
+const FOUR_CARD_PERMUTATIONS = (() => {
+  const permutations = [];
+  const visit = (prefix, remaining) => {
+    if (remaining.length === 0) {
+      permutations.push(prefix);
+      return;
+    }
+    for (let index = 0; index < remaining.length; index += 1) {
+      visit(
+        [...prefix, remaining[index]],
+        [...remaining.slice(0, index), ...remaining.slice(index + 1)],
+      );
+    }
+  };
+  visit([], [0, 1, 2, 3]);
+  return permutations;
+})();
+
 function strongDiscardCandidates(cardIds) {
   const candidates = new Map();
   const naturalCards = cardIds.filter((cardId) => cardId !== JOKER_ID);
@@ -1956,6 +1974,276 @@ function exploreSuitStructure(state, random, iterations) {
   return bestState;
 }
 
+const TRIPLE_AXIS_FILL_STEPS = [
+  [0, "corner"],
+  [10, "row"],
+  [20, "corner"],
+  [5, "free"],
+  [15, "free"],
+  [11, "row"],
+  [1, "free"],
+  [6, "free"],
+  [16, "free"],
+  [21, "free"],
+  [2, "column"],
+  [7, "column"],
+  [17, "column"],
+  [22, "column"],
+  [13, "row"],
+  [3, "free"],
+  [8, "free"],
+  [18, "free"],
+  [23, "free"],
+  [4, "corner"],
+  [14, "row"],
+  [24, "corner"],
+  [9, "free"],
+  [19, "free"],
+];
+
+const TRIPLE_AXIS_HAND_BONUS = 2_000;
+const TRIPLE_AXIS_COMPLETE_LINE_BONUS = 2_200;
+const TRIPLE_AXIS_QUALITY_BONUS = 120;
+
+function bestCrossAxisCompletionBase(
+  fixedCards,
+  completionChoices,
+  completionCache,
+) {
+  const key = `${fixedCards.length}:${[...fixedCards].sort().join("|")}`;
+  const cached = completionCache.get(key);
+  if (cached !== undefined) return cached;
+  let best = 0;
+  for (const completion of completionChoices) {
+    best = Math.max(best, scoreProHand([...fixedCards, ...completion]).base);
+  }
+  completionCache.set(key, best);
+  return best;
+}
+
+function crossAxisCompletionBound(
+  cornerCards,
+  rowCards,
+  freeCards,
+) {
+  const pairChoices = combinations(freeCards, 2);
+  const quadChoices = combinations(freeCards, 4);
+  const completionCache = new Map();
+  let best = 0;
+  for (const leftCorners of combinations(cornerCards, 2)) {
+    const leftCornerSet = new Set(leftCorners);
+    const rightCorners = cornerCards.filter(
+      (cardId) => !leftCornerSet.has(cardId),
+    );
+    for (const permutation of FOUR_CARD_PERMUTATIONS) {
+      const placedRow = permutation.map((index) => rowCards[index]);
+      const bases = [
+        bestCrossAxisCompletionBase(
+          [...leftCorners, placedRow[0]],
+          pairChoices,
+          completionCache,
+        ),
+        bestCrossAxisCompletionBase(
+          [placedRow[1]],
+          quadChoices,
+          completionCache,
+        ),
+        bestCrossAxisCompletionBase(
+          [placedRow[2]],
+          quadChoices,
+          completionCache,
+        ),
+        bestCrossAxisCompletionBase(
+          [...rightCorners, placedRow[3]],
+          pairChoices,
+          completionCache,
+        ),
+      ];
+      const value =
+        bases.reduce((sum, base) => sum + base, 0) +
+        bases.filter((base) => base > 0).length * TRIPLE_AXIS_HAND_BONUS;
+      best = Math.max(best, value);
+    }
+  }
+  return best;
+}
+
+function tripleAxisLineValue(state, line) {
+  const cards = line.indices
+    .map((index) => state[index])
+    .filter(Boolean);
+  if (cards.length === 0) return 0;
+  if (cards.length < 5) return linePotential(cards) * line.bonus;
+  const hand = fastHandStats(cards);
+  return (
+    hand.base * line.bonus +
+    Number(hand.base > 0) * TRIPLE_AXIS_COMPLETE_LINE_BONUS +
+    hand.quality * TRIPLE_AXIS_QUALITY_BONUS
+  );
+}
+
+function tripleAxisBeamEntry(structure, cardIds) {
+  const otherHandIndex = [0, 1, 2].find(
+    (index) => index !== structure.cornerIndex && index !== structure.rowIndex,
+  );
+  const used = new Set([
+    JOKER_ID,
+    ...structure.hands.flat(),
+    ...structure.discard,
+  ]);
+  const state = Array(30).fill(null);
+  state[12] = JOKER_ID;
+  structure.discard.forEach((cardId, index) => {
+    state[25 + index] = cardId;
+  });
+  const lineValues = PRO_LINE_DEFINITIONS.map((line) =>
+    tripleAxisLineValue(state, line),
+  );
+  return {
+    state,
+    pools: {
+      corner: structure.hands[structure.cornerIndex],
+      row: structure.hands[structure.rowIndex],
+      column: structure.hands[otherHandIndex],
+      free: cardIds.filter((cardId) => !used.has(cardId)),
+    },
+    lineValues,
+    value:
+      scoreProHand(structure.discard).base * 3 +
+      TRIPLE_AXIS_HAND_BONUS +
+      lineValues.reduce((sum, lineValue) => sum + lineValue, 0),
+    order: 0,
+  };
+}
+
+function tripleAxisStraightFlushStates(cardIds) {
+  if (!cardIds.includes(JOKER_ID)) return [];
+  const sortedCards = sortProCardIds(cardIds);
+  const straightFlushes = straightHandCandidates(sortedCards)
+    .filter(
+      (candidate) =>
+        candidate.hand.key === "straight-flush" &&
+        candidate.cards.includes(JOKER_ID),
+    )
+    .map((candidate) =>
+      candidate.cards.filter((cardId) => cardId !== JOKER_ID),
+    );
+  const structures = [];
+
+  for (let first = 0; first < straightFlushes.length - 2; first += 1) {
+    for (let second = first + 1; second < straightFlushes.length - 1; second += 1) {
+      for (let third = second + 1; third < straightFlushes.length; third += 1) {
+        const hands = [
+          straightFlushes[first],
+          straightFlushes[second],
+          straightFlushes[third],
+        ];
+        if (new Set(hands.flat()).size !== 12) continue;
+        const suits = new Set(
+          hands.map((hand) => PRO_CARD_BY_ID[hand[0]]?.suit),
+        );
+        if (suits.size !== 3) continue;
+        const axisCards = new Set([JOKER_ID, ...hands.flat()]);
+        const remainingCards = sortedCards.filter(
+          (cardId) => !axisCards.has(cardId),
+        );
+        for (const discard of strongDiscardCandidates(remainingCards)) {
+          const discarded = new Set(discard);
+          const freeCards = remainingCards.filter(
+            (cardId) => !discarded.has(cardId),
+          );
+          if (freeCards.length !== 12) continue;
+          for (let cornerIndex = 0; cornerIndex < hands.length; cornerIndex += 1) {
+            const otherIndexes = [0, 1, 2].filter(
+              (index) => index !== cornerIndex,
+            );
+            const firstBound = crossAxisCompletionBound(
+              hands[cornerIndex],
+              hands[otherIndexes[0]],
+              freeCards,
+            );
+            const secondBound = crossAxisCompletionBound(
+              hands[cornerIndex],
+              hands[otherIndexes[1]],
+              freeCards,
+            );
+            structures.push({
+              hands,
+              discard,
+              cornerIndex,
+              rowIndex:
+                firstBound >= secondBound
+                  ? otherIndexes[0]
+                  : otherIndexes[1],
+              bound:
+                scoreProHand(discard).base * 3 +
+                Math.max(firstBound, secondBound),
+            });
+          }
+        }
+      }
+    }
+  }
+
+  const shortlist = structures
+    .sort((a, b) => b.bound - a.bound)
+    .slice(0, 128);
+  if (shortlist.length === 0) return [];
+
+  let beam = shortlist.map((structure) =>
+    tripleAxisBeamEntry(structure, sortedCards),
+  );
+  const beamWidth = 6144;
+  let candidateOrder = 0;
+  for (const [slot, group] of TRIPLE_AXIS_FILL_STEPS) {
+    const expanded = [];
+    for (const entry of beam) {
+      for (let index = 0; index < entry.pools[group].length; index += 1) {
+        const state = [...entry.state];
+        state[slot] = entry.pools[group][index];
+        const pools = {
+          ...entry.pools,
+          [group]: [
+            ...entry.pools[group].slice(0, index),
+            ...entry.pools[group].slice(index + 1),
+          ],
+        };
+        const lineValues = [...entry.lineValues];
+        let value = entry.value;
+        for (const lineIndex of PRO_LINE_INDEXES_BY_SLOT[slot]) {
+          const nextLineValue = tripleAxisLineValue(
+            state,
+            PRO_LINE_DEFINITIONS[lineIndex],
+          );
+          value += nextLineValue - lineValues[lineIndex];
+          lineValues[lineIndex] = nextLineValue;
+        }
+        expanded.push({
+          state,
+          pools,
+          lineValues,
+          value,
+          order: candidateOrder,
+        });
+        candidateOrder += 1;
+      }
+    }
+    expanded.sort(
+      (a, b) => b.value - a.value || a.order - b.order,
+    );
+    beam = expanded.slice(0, beamWidth);
+  }
+
+  return beam
+    .map((entry) => stateToSolution(
+      entry.state,
+      "Pro triple-axis straight-flush seed",
+    ))
+    .sort((a, b) => compareProScores(b.score, a.score))
+    .slice(0, 8)
+    .map((solution) => [...solution.grid, ...solution.discard]);
+}
+
 function initialStates(
   cardIds,
   random,
@@ -2064,6 +2352,10 @@ function initialStates(
     structuralDiscards.slice(0, 12).forEach(addBeamDiscard);
   }
   const beamDiscards = [...beamDiscardMap.values()];
+  const tripleAxisStarts =
+    searchBudgetMs >= 20_000
+      ? tripleAxisStraightFlushStates(cardIds)
+      : [];
   const preservesSecondNaturalQuad = beamDiscards.some((discard) => {
     if (scoreProHand(discard).key !== "four-kind") return false;
     const discarded = new Set(discard);
@@ -2167,6 +2459,7 @@ function initialStates(
       ].filter(Boolean);
     });
   starts.unshift(
+    ...tripleAxisStarts,
     ...qualityRowStarts,
     ...straightRowStarts,
     ...exhaustiveSuitStarts,
@@ -3316,6 +3609,7 @@ export const __proHeuristicTestHooks = {
   straightRowStructuredStates,
   strongDiscardCandidates,
   suitStructuredStates,
+  tripleAxisStraightFlushStates,
   mutateTowardStraightFlush,
   optimizeStructuredColumns,
 };

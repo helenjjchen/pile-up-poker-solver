@@ -157,9 +157,9 @@ Regression contracts include:
 - the same-deal `$20,550` screenshot floor constructs the known `$21,630`
   straight-row leader during its first deep pass;
 - the recovered `$18,450` screenshot validates exactly and remains a protected
-  floor; an extended independent-seed benchmark for that deal reaches `$20,700`,
-  and improved Pro leaders are persisted as they stream instead of waiting for
-  the full pass to finish;
+  floor; Deep search now constructs the known `$20,700` triple-axis
+  straight-flush layout in its opening portfolio, and improved Pro leaders are
+  persisted as they stream instead of waiting for the full pass to finish;
 - reference deals remain deterministic at their explicit attempt budgets;
 - continuation runs never move the displayed best backward;
 - an uploaded/saved incumbent is refined before broad Pro exploration and is the

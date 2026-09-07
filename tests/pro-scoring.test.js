@@ -400,6 +400,20 @@ const exitedHighScoreDeep = scoreProPlacement(
 );
 assert.equal(exitedHighScoreDeep.total, 20700);
 assert.equal(exitedHighScoreDeep.handCount, 12);
+const exitedHighScoreTripleAxisStarts =
+  __proHeuristicTestHooks.tripleAxisStraightFlushStates([
+    ...exitedHighScoreGrid,
+    ...exitedHighScoreDiscard,
+  ]);
+const exitedHighScoreTripleAxisTotal = Math.max(
+  ...exitedHighScoreTripleAxisStarts.map((state) =>
+    scoreProPlacement(state.slice(0, 25), state.slice(25)).total,
+  ),
+);
+assert.ok(
+  exitedHighScoreTripleAxisTotal >= exitedHighScoreDeep.total,
+  `triple-axis construction missed $${exitedHighScoreDeep.total} and returned $${exitedHighScoreTripleAxisTotal}`,
+);
 assert.deepEqual(
   sortProCardIds([
     ...exitedHighScoreDeepGrid,

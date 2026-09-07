@@ -482,7 +482,13 @@ Pro currently uses a best-found anytime search:
 2. Assemble complete starts from several independent structural families plus
    mixed and unrestricted layouts. A bounded exact-cover pass can partition a
    straight-heavy board into four runs plus a scoring fifth row, then arrange
-   those rows to maximize the intersecting columns.
+   those rows to maximize the intersecting columns. On eligible Deep deals, a
+   separate constructive beam also places three disjoint Joker-assisted
+   straight flushes through the center as a row, column, and doubled corner
+   hand, evaluates compatible scoring discards independently of the general
+   premium-discard shortlist, then fills the remaining lines.
+   This is intentionally Pro-specific: Normal has neither the shared Joker nor
+   the 5×5 center/corner geometry, and retains its exact high-bucket search.
 3. Keep the user layout, saved best, and earlier-run leaders as protected lower
    bounds.
 4. When a user layout or saved best exists, check every single-card swap from
@@ -537,9 +543,8 @@ The current regression portfolio is deliberately varied:
 - the repeated screenshot deal whose `$20,550` upload must construct the known
   `$21,630` straight-row leader in the first deep pass;
 - the recovered `$18,450` screenshot remains a protected floor, while the same
-  deal's extended independent-seed benchmark reaches `$20,700` (the strongest
-  result after roughly 80 million sampled mutations, not a proof of the global
-  optimum);
+  deal's Deep opening portfolio now constructs `$20,700` directly; this remains
+  the strongest known result, not a proof of the global optimum;
 - the mixed screenshot board whose uploaded `$22,260` layout now has a
   first-pass regression target above `$22,980`;
 - two earlier reference boards;

@@ -10,7 +10,7 @@ import {
   createProHeuristicSession,
   finishProHeuristicSession,
   stepProHeuristicSession,
-} from "./proHeuristicSolver.js?v=pro-search-10";
+} from "./proHeuristicSolver.js?v=pro-search-11";
 import { compareProScores, scoreProPlacement } from "./proScoring.js";
 import {
   formatScoringWayCount,

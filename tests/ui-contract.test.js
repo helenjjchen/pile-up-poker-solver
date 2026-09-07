@@ -101,9 +101,9 @@ const horizontalLabels = ruleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
 
 assert.match(html, /styles\.css\?v=design-system-61/);
-assert.match(html, /src\/modeBoot\.js\?v=mode-shell-18/);
+assert.match(html, /src\/modeBoot\.js\?v=mode-shell-19/);
 assert.match(modeBoot, /\.\/app\.js\?v=solver-cache-56/);
-assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-25/);
+assert.match(modeBoot, /\.\/proApp\.js\?v=pro-solver-26/);
 assert.match(
   modeBoot,
   /deepSearchOption\.value = isPro \? "45000" : "30000"/,
@@ -128,7 +128,7 @@ assert.match(app, /recognizerFeedback\.js\?v=recognizer-feedback-1/);
 assert.match(proApp, /recognizerFeedback\.js\?v=recognizer-feedback-1/);
 assert.match(app, /solutionPortfolio\.js\?v=solution-portfolio-1/);
 assert.match(proApp, /solutionPortfolio\.js\?v=solution-portfolio-1/);
-assert.match(proApp, /proHeuristicSolver\.js\?v=pro-search-10/);
+assert.match(proApp, /proHeuristicSolver\.js\?v=pro-search-11/);
 assert.match(proApp, /proHeuristicWorker\.js\?v=pro-solver-14/);
 assert.match(
   proApp,
