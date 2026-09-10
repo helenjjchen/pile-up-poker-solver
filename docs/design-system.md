@@ -143,6 +143,8 @@ Use these tokens before introducing a literal spacing value.
   on its center star.
 - Board cards inherit the same rank and suit typography in both versions. Pro may change only the grid count, gaps,
   discard rail, and card aspect needed to fit five cards per line.
+- Center ranks and the Joker's center star use the shared `4px` spacing token as a downward optical offset. Apply the
+  offset through `.card-center-rank` so picker, board, discard, Normal, and Pro cards remain aligned together.
 - The board should remain large enough to read at a glance while fitting a standard laptop viewport as closely as
   practical.
 - Never reduce the board floor to solve a surrounding spacing issue. Audit header, panel, and section spacing first.

@@ -193,6 +193,11 @@ assert.doesNotMatch(
   /\.pro-page \.playing-card [^{]+\{[^}]*font-size:/s,
   "Normal and Pro board cards must share the same typography",
 );
+assert.match(
+  bodyMatching("\\.card-center-rank", /transform:/),
+  /transform:\s*translateY\(var\(--space-1\)\)/,
+  "all center card glyphs should share the 4px downward optical offset",
+);
 
 const horizontalLabels = firstRuleBody("\\.column-line,\\s*\\.discard-line");
 assert.match(horizontalLabels, /align-content:\s*start/);
